@@ -1,0 +1,8 @@
+package: github.com/negator/godynamo
+import:
+- package: github.com/aws/aws-sdk-go
+  subpackages:
+  - aws
+  - aws/session
+  - service/dynamodb
+  - service/dynamodb/dynamodbattribute

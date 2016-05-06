@@ -1,0 +1,27 @@
+hash: 2041334e58bba8b3f1d5e9978afb64513d8659f9670534031c1cf1e2afbd1b2d
+updated: 2016-05-06T11:30:16.339501677-07:00
+imports:
+- name: github.com/aws/aws-sdk-go
+  version: d85fa529a99a833067e11c0a838b9db7a5d5ea71
+  subpackages:
+  - aws
+  - aws/session
+  - service/dynamodb
+  - service/dynamodb/dynamodbattribute
+  - aws/awserr
+  - aws/credentials
+  - aws/awsutil
+  - aws/client
+  - aws/client/metadata
+  - aws/request
+  - private/protocol/jsonrpc
+  - private/signer/v4
+  - private/waiter
+  - private/protocol/json/jsonutil
+  - private/protocol/rest
+  - private/protocol
+- name: github.com/go-ini/ini
+  version: 12f418cc7edc5a618a51407b7ac1f1f512139df3
+- name: github.com/jmespath/go-jmespath
+  version: 0b12d6b521d83fc7f755e7cfc1b1fbdd35a01a74
+devImports: []
