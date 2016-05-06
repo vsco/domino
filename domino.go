@@ -28,8 +28,9 @@ type KeyValue struct {
 }
 
 type Path string
+type Type string
 
-/*Dynamo Type enumeration*/
+/*Attribute type enumeration*/
 const (
 	S    = "S"
 	SS   = "SS"
@@ -43,16 +44,35 @@ const (
 	M    = "M"
 )
 
-type PathType struct {
-	path  Path
-	_type Type
-}
+type comparator struct(
+	neq = "<>"
+	lt = "<"
+	lte = "<="
+	gt = ">"
+	gte = ">="
+)
 
 type Condition struct {
-	attrExists    []Path
-	attrNotExists []Path
-	exprAttrValue []
-	attrType      []PathType
+	/*All adjacent Conditions ar OR'd together*/
+	next          *Condition
+	expression string
+}
+
+func (c *Condition) Or () *Condition {
+	n := Condition
+}
+func (c *Condition) AttributeExists(a Path) *Condition {
+	c.attrExists = append(c.attrExists, a)
+	return c
+}
+
+func (c *Condition) AttributeNotExists(a Path) *Condition {
+	c.attrExists = append(c.attrExists, a)
+	return c
+}
+
+func (c * Condition) BeginsWith(p Path, a string) *Condition {
+
 }
 
 /*GetItemInput*/
