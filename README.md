@@ -17,7 +17,7 @@ table := DynamoDBTable {
   RangeKeyName:&"password"
 }
 
-q := table.GetItem(Key{"naveen@email.com", "password"}).SetConsistentRead(true).Build()  //This is type GetItemInput
+q := table.GetItem(KeyValue{"naveen@email.com", "password"}).SetConsistentRead(true).Build()  //This is type GetItemInput
 r, err := dynamo.GetItem(q)
 
 ```
