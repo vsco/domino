@@ -14,20 +14,51 @@ type DynamoDBIFace interface {
 	BatchWriteItem(input *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error)
 }
 
+/*A static table definition representing a dynamo table*/
 type DynamoTable struct {
 	Name             string
 	PartitionKeyName string
 	RangeKeyName     *string //Optional param. If no range key set to nil
 }
 
+/*Key values for use in creating queries*/
 type KeyValue struct {
 	partitionKey interface{}
 	rangeKey     interface{}
 }
 
+type Path string
+
+/*Dynamo Type enumeration*/
+const (
+	S    = "S"
+	SS   = "SS"
+	NN   = "N"
+	NS   = "NS"
+	B    = "B"
+	BS   = "BS"
+	BOOL = "Bool"
+	NULL = "Null"
+	L    = "List"
+	M    = "M"
+)
+
+type PathType struct {
+	path  Path
+	_type Type
+}
+
+type Condition struct {
+	attrExists    []Path
+	attrNotExists []Path
+	exprAttrValue []
+	attrType      []PathType
+}
+
 /*GetItemInput*/
 type GetItem dynamodb.GetItemInput
 
+/*Primary constructor for creating a  get item query*/
 func (table DynamoTable) GetItem(key KeyValue) *GetItem {
 	q := GetItem(dynamodb.GetItemInput{})
 	t := (&q).SetTable(table.Name).SetKey(table.PartitionKeyName, key.partitionKey)
@@ -54,6 +85,8 @@ func (d *GetItem) SetConsistentRead(c bool) *GetItem {
 	(*d).ConsistentRead = &c
 	return d
 }
+
+/*Must call this method to create a GetItemInput object for use in aws dynamodb api*/
 func (d *GetItem) Build() *dynamodb.GetItemInput {
 	r := dynamodb.GetItemInput(*d)
 	return &r
@@ -65,8 +98,7 @@ type PutItem dynamodb.PutItemInput
 func (table DynamoTable) PutItem(item *interface{}) *PutItem {
 	q := PutItem(dynamodb.PutItemInput{})
 	t := (&q).SetTable(table.Name)
-
-	return (&q)
+	return t
 }
 
 func (d *PutItem) SetTable(name string) *PutItem {
@@ -75,7 +107,12 @@ func (d *PutItem) SetTable(name string) *PutItem {
 }
 
 func (d *PutItem) ReturnOld() *PutItem {
-	d.ReturnValues = &"ALL_OLD"
+	s := "ALL_OLD"
+	d.ReturnValues = &s
+	return d
+}
+
+func (d *PutItem) Conditions(func(*Condition) Condition) *PutItem {
 	return d
 }
 
