@@ -1,4 +1,4 @@
-package godynamo
+package domino
 
 import (
 	"github.com/aws/aws-sdk-go/aws"
@@ -25,54 +25,6 @@ type DynamoTable struct {
 type KeyValue struct {
 	partitionKey interface{}
 	rangeKey     interface{}
-}
-
-type Path string
-type Type string
-
-/*Attribute type enumeration*/
-const (
-	S    = "S"
-	SS   = "SS"
-	NN   = "N"
-	NS   = "NS"
-	B    = "B"
-	BS   = "BS"
-	BOOL = "Bool"
-	NULL = "Null"
-	L    = "List"
-	M    = "M"
-)
-
-type comparator struct(
-	neq = "<>"
-	lt = "<"
-	lte = "<="
-	gt = ">"
-	gte = ">="
-)
-
-type Condition struct {
-	/*All adjacent Conditions ar OR'd together*/
-	next          *Condition
-	expression string
-}
-
-func (c *Condition) Or () *Condition {
-	n := Condition
-}
-func (c *Condition) AttributeExists(a Path) *Condition {
-	c.attrExists = append(c.attrExists, a)
-	return c
-}
-
-func (c *Condition) AttributeNotExists(a Path) *Condition {
-	c.attrExists = append(c.attrExists, a)
-	return c
-}
-
-func (c * Condition) BeginsWith(p Path, a string) *Condition {
-
 }
 
 /*GetItemInput*/
@@ -129,10 +81,6 @@ func (d *PutItem) SetTable(name string) *PutItem {
 func (d *PutItem) ReturnOld() *PutItem {
 	s := "ALL_OLD"
 	d.ReturnValues = &s
-	return d
-}
-
-func (d *PutItem) Conditions(func(*Condition) Condition) *PutItem {
 	return d
 }
 
