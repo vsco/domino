@@ -12,40 +12,41 @@ sess := session.New(config)
 dynamo := dynamodb.New(sess)
 
 //Define your table schema statically
-table := domino.DynamoTable{
-		Name:             "Users",
-		PartitionKeyName: "email",
-		RangeKeyName:     "password",
-	}
-	testField := domino.DynamoField{
-		Table: table,
-		Name:  "test",
-		Type:  S,
-	}
-	thatField := domino.DynamoField{
-		Table: table,
-		Name:  "that",
-		Type:  N,
-	}
-	otherField := domino.DynamoField{
-		Table: table,
-		Name:  "other",
-		Type:  N,
-	}
+type MyTable struct {
+	DynamoTable
+	thisField  DynamoField
+	thatField  DynamoField
+	otherField DynamoField
+}
 
-	q := domino.Or(
-		testField.BeginsWith("t"),
-		otherField.Contains(strconv.Itoa(25)),
-		Not(testField.Contains("t")),
-		And(
-			testField.Size(lte, 25),
-			thatField.Size(gte, 25),
-		),
-		testField.Equals("test"),
-		testField.LessThanOrEq("test"),
-		testField.Between("0", "1"),
-		testField.In("0", "1"),
-	)
+type User struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+func NewMyTable() MyTable {
+	return MyTable{
+		DynamoTable{
+			Name:         "mytable",
+			PartitionKey: DynamoField{"email", S},
+			RangeKey:     DynamoField{"password", S},
+		},
+
+		DynamoField{"test", S},
+		DynamoField{"that", N},
+		DynamoField{"other", N},
+	}
+}
+
+
+table := NewMyTable() 
+
+p := table.PutItem(User{"naveen@email.com","password"}).SetConditionExpression(table.PartitionKey.NotExists()).Build()
+r, err := dynamo.PutItem(q)
+
+...
+
+q := table.GetItem(KeyValue{"naveen@email.com", "password"}).SetConsistentRead(true).Build()  //This is type GetItemInput
 r, err := dynamo.GetItem(q)
 
 ```
