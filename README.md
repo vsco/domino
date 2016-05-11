@@ -15,11 +15,18 @@ dynamo := dynamodb.New(sess)
 type MyTable struct {
 	DynamoTable
 	emailField    dynamoFieldString
-	passwordField emptyDynamoField
+	passwordField dynamoFieldString
 
-	thisField  dynamoFieldNumeric
-	thatField  dynamoFieldString
-	otherField dynamoFieldString
+	registrationDate dynamoFieldNumeric
+	loginCount       dynamoFieldNumeric
+	lastLoginDate    dynamoFieldNumeric
+	vists            dynamoFieldNumericSet
+	preferences      dynamoFieldMap
+	nameField        dynamoFieldString
+	lastNameField    dynamoFieldString
+
+	registrationDateIndex LocalSecondaryIndex
+	nameGlobalIndex       GlobalSecondaryIndex
 }
 
 type User struct {
@@ -29,18 +36,27 @@ type User struct {
 
 func NewMyTable() MyTable {
 	pk := DynamoFieldString("email")
-	rk := EmptyDynamoField()
+	rk := DynamoFieldString("password")
+	firstName := DynamoFieldString("firstName")
+	lastName := DynamoFieldString("lastName")
+	reg := DynamoFieldNumeric("registrationDate")
 	return MyTable{
 		DynamoTable{
 			Name:         "mytable",
 			PartitionKey: pk,
 			RangeKey:     rk,
 		},
-		pk,
-		rk,
-		DynamoFieldNumeric("test"),
-		DynamoFieldString("that"),
-		DynamoFieldString("other"),
+		pk,  //email
+		rk,  //password
+		reg, //registration
+		DynamoFieldNumeric("loginCount"),
+		DynamoFieldNumeric("lastLoginDate"),
+		DynamoFieldNumericSet("visits"),
+		DynamoFieldMap("preferences"),
+		firstName,
+		lastName,
+		LocalSecondaryIndex{"registrationDate-index", reg},
+		GlobalSecondaryIndex{"name-index", firstName, lastName},
 	}
 }
 
