@@ -60,12 +60,28 @@ func NewMyTable() MyTable {
 	}
 }
 
-
 table := NewMyTable() 
 
+```
+
+Use a fluent style DSL to interact with your table. All DynamoDB data operations are supported
+
+
+Put Item
+```
 p := table.PutItem(User{"naveen@email.com","password"}).SetConditionExpression(table.PartitionKey.NotExists()).Build()
 r, err := dynamo.PutItem(q)
+```
 
+GetItem
+```
+q = table.GetItem(KeyValue{"naveen@email.com", "password"}).SetConsistentRead(true).Build()  //This is type GetItemInput
+r, err = dynamo.GetItem(q)
+```
+
+
+Update Item
+```
 q := table.
 	UpdateItem(KeyValue{"naveen@email.com", "password"}).
 	SetUpdateExpression(
@@ -76,7 +92,10 @@ q := table.
 		table.preferences.RemoveKey("update_email"),
 	).Build()
 r, err = dynamo.UpdateItem(q)	
+```
 
+Query
+```
 q = table.
 	Query(
 		table.nameField.Equals("naveen"),
@@ -88,7 +107,10 @@ q = table.
 	Build() 
 
 r, err = dynamo.Query(q)	
+```
 
+Batch Get Item
+```
 q = table.
 	BatchGetItem(
 		KeyValue{"naveen@email.com", "password"},
@@ -97,9 +119,8 @@ q = table.
 	SetConsistentRead(true).
 	Build()
 r, err = dynamo.BatchGetItem(q)	
-
-
-q = table.GetItem(KeyValue{"naveen@email.com", "password"}).SetConsistentRead(true).Build()  //This is type GetItemInput
-r, err = dynamo.GetItem(q)
-
 ```
+
+
+
+
