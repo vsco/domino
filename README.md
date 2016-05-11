@@ -69,13 +69,21 @@ Use a fluent style DSL to interact with your table. All DynamoDB data operations
 
 Put Item
 ```
-p := table.PutItem(User{"naveen@email.com","password"}).SetConditionExpression(table.PartitionKey.NotExists()).Build()
+p := table.
+	PutItem(User{"naveen@email.com","password"}).
+	SetConditionExpression(
+		table.PartitionKey.NotExists()
+	).
+	Build()
 r, err := dynamo.PutItem(q)
 ```
 
 GetItem
 ```
-q = table.GetItem(KeyValue{"naveen@email.com", "password"}).SetConsistentRead(true).Build()  //This is type GetItemInput
+q = table.
+	GetItem(KeyValue{"naveen@email.com", "password"}).
+	SetConsistentRead(true).
+	Build()  //This is type GetItemInput
 r, err = dynamo.GetItem(q)
 ```
 
