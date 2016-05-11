@@ -1,8 +1,12 @@
-# domino
+# Domino
 Typesafe DynamoDB query DSL for Go
 
 
-This is an easy to use wrapper DSL for the aws dynamodb GO api.
+Features:
+	* Fully typesafe fluent syntex DSL
+	* Full Condition and Filter Expression functionality
+	* Static schema definition
+	* Streaming results for Query, Scan and BatchGet operations
 
 
 ```
@@ -104,6 +108,7 @@ r, err = dynamo.UpdateItem(q)
 
 Query
 ```
+p = table.lastNameField.Equals("Gattu")
 q = table.
 	Query(
 		table.nameField.Equals("naveen"),
@@ -129,6 +134,30 @@ q = table.
 r, err = dynamo.BatchGetItem(q)	
 ```
 
+
+Fully typesafe condition expression and filter expression support.
+```
+expr := Or(
+		table.lastNameField.Contains("gattu"),
+		Not(table.registrationDate.Contains(12345)),
+		And(
+			table.visits.Size(lte, 25),
+			table.nameField.Size(gte, 25),
+		),		
+		table.lastLoginDate.LessThanOrEq(time.Now().UnixNano()),		
+	)
+q = table.
+	Query(
+		table.nameField.Equals("naveen"),
+		&p,
+	).
+	SetFilterExpression(expr).
+	Build()
+
+
+```
+
+Streaming Results 
 
 
 
