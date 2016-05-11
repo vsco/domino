@@ -14,9 +14,12 @@ dynamo := dynamodb.New(sess)
 //Define your table schema statically
 type MyTable struct {
 	DynamoTable
-	thisField  DynamoField
-	thatField  DynamoField
-	otherField DynamoField
+	emailField    dynamoFieldString
+	passwordField emptyDynamoField
+
+	thisField  dynamoFieldNumeric
+	thatField  dynamoFieldString
+	otherField dynamoFieldString
 }
 
 type User struct {
@@ -25,16 +28,19 @@ type User struct {
 }
 
 func NewMyTable() MyTable {
+	pk := DynamoFieldString("email")
+	rk := EmptyDynamoField()
 	return MyTable{
 		DynamoTable{
 			Name:         "mytable",
-			PartitionKey: DynamoField{"email", S},
-			RangeKey:     DynamoField{"password", S},
+			PartitionKey: pk,
+			RangeKey:     rk,
 		},
-
-		DynamoField{"test", S},
-		DynamoField{"that", N},
-		DynamoField{"other", N},
+		pk,
+		rk,
+		DynamoFieldNumeric("test"),
+		DynamoFieldString("that"),
+		DynamoFieldString("other"),
 	}
 }
 

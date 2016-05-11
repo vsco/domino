@@ -2,14 +2,16 @@ package domino
 
 import (
 	// "fmt"
-	"github.com/aws/aws-sdk-go/aws"
+	// "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
 
 type DynamoDBIFace interface {
 	GetItem(input *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error)
+	BatchGetItem(input *dynamodb.BatchGetItemInput) (*dynamodb.BatchGetItemOutput, error)
 	PutItem(input *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error)
+	Query(input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error)
 	UpdateItem(input *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error)
 	DeleteItem(input *dynamodb.DeleteItemInput) (*dynamodb.DeleteItemOutput, error)
 	BatchWriteItem(input *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error)
@@ -47,6 +49,10 @@ type dynamoField struct {
 	empty bool //If true, this represents an empty field
 }
 
+type dynamoValueField struct {
+	dynamoField
+}
+
 type dynamoCollectionField struct {
 	dynamoField
 }
@@ -66,25 +72,25 @@ type emptyDynamoField struct {
 }
 
 type dynamoFieldNumeric struct {
-	dynamoField
+	dynamoValueField
 }
 type dynamoFieldNumericSet struct {
 	dynamoCollectionField
 }
 type dynamoFieldString struct {
-	dynamoField
+	dynamoValueField
 }
 type dynamoFieldStringSet struct {
 	dynamoCollectionField
 }
-type dynamoFieldBlob struct {
-	dynamoField
+type dynamoFieldBinary struct {
+	dynamoValueField
 }
-type dynamoFieldBlobSet struct {
+type dynamoFieldBinarySet struct {
 	dynamoCollectionField
 }
 type dynamoFieldBool struct {
-	dynamoField
+	dynamoValueField
 }
 
 type dynamoFieldList struct {
@@ -106,9 +112,11 @@ func EmptyDynamoField() emptyDynamoField {
 
 func DynamoFieldNumeric(name string) dynamoFieldNumeric {
 	return dynamoFieldNumeric{
-		dynamoField{
-			name:  name,
-			_type: N,
+		dynamoValueField{
+			dynamoField{
+				name:  name,
+				_type: N,
+			},
 		},
 	}
 }
@@ -126,23 +134,27 @@ func DynamoFieldNumericSet(name string) dynamoFieldNumericSet {
 
 func DynamoFieldString(name string) dynamoFieldString {
 	return dynamoFieldString{
-		dynamoField{
-			name:  name,
-			_type: S,
+		dynamoValueField{
+			dynamoField{
+				name:  name,
+				_type: S,
+			},
 		},
 	}
 }
 
-func DynamoFieldBlob(name string) dynamoFieldBlob {
-	return dynamoFieldBlob{
-		dynamoField{
-			name:  name,
-			_type: B,
+func DynamoFieldBinary(name string) dynamoFieldBinary {
+	return dynamoFieldBinary{
+		dynamoValueField{
+			dynamoField{
+				name:  name,
+				_type: B,
+			},
 		},
 	}
 }
-func DynamoFieldBlobSet(name string) dynamoFieldBlobSet {
-	return dynamoFieldBlobSet{
+func DynamoFieldBinarySet(name string) dynamoFieldBinarySet {
+	return dynamoFieldBinarySet{
 		dynamoCollectionField{
 			dynamoField{
 				name:  name,
@@ -187,13 +199,13 @@ func DynamoFieldMap(name string) dynamoFieldMap {
 
 type LocalSecondaryIndex struct {
 	Name    string
-	SortKey dynamoField
+	SortKey DynamoFieldIFace
 }
 
 type GlobalSecondaryIndex struct {
 	Name         string
-	PartitionKey dynamoField
-	RangeKey     *dynamoField //Optional param. If no range key set to nil
+	PartitionKey DynamoFieldIFace
+	RangeKey     DynamoFieldIFace //Optional param. If no range key set to nil
 }
 
 /*Key values for use in creating queries*/
@@ -218,11 +230,6 @@ func (table DynamoTable) GetItem(key KeyValue) *get {
 	return &q
 }
 
-func (d *get) GetAttributes(attribs ...string) *get {
-	a := (*d).AttributesToGet
-	(*d).AttributesToGet = append(a, aws.StringSlice(attribs)...)
-	return d
-}
 func (d *get) SetConsistentRead(c bool) *get {
 	(*d).ConsistentRead = &c
 	return d
@@ -232,6 +239,19 @@ func (d *get) SetConsistentRead(c bool) *get {
 func (d *get) Build() *dynamodb.GetItemInput {
 	r := dynamodb.GetItemInput(*d)
 	return &r
+}
+
+/*Execute a dynamo getitem call, hydrating the passed in struct on return or returning error*/
+func (d *get) ExecuteWith(dynamo DynamoDBIFace, item interface{}) error {
+	out, err := dynamo.GetItem(d.Build())
+	if err != nil {
+		return err
+	}
+	err = dynamodbattribute.UnmarshalMap(out.Item, item)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 /***************************************************************************************/
@@ -275,6 +295,30 @@ func (d *batchGet) SetConsistentRead(c bool) *batchGet {
 func (d *batchGet) Build() *dynamodb.BatchGetItemInput {
 	r := dynamodb.BatchGetItemInput(*d)
 	return &r
+}
+
+func (d *batchGet) ExecuteWith(dynamo DynamoDBIFace, nextItem func() interface{}) error {
+
+Execute:
+
+	out, err := dynamo.BatchGetItem(d.Build())
+	if err != nil {
+		return err
+	}
+	for _, r := range out.Responses {
+		for _, item := range r {
+			err = dynamodbattribute.UnmarshalMap(item, nextItem())
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if out.UnprocessedKeys != nil && len(out.UnprocessedKeys) > 0 {
+		d.RequestItems = out.UnprocessedKeys
+		goto Execute
+	}
+
+	return nil
 }
 
 /***************************************************************************************/
@@ -437,7 +481,53 @@ func (d *update) ReturnOld() *update {
 func (d *update) SetConditionExpression(c Expression) *update {
 	s, m, _ := c.construct(1)
 	d.ConditionExpression = &s
-	d.ExpressionAttributeValues, _ = dynamodbattribute.MarshalMap(m)
+	ea, err := dynamodbattribute.MarshalMap(m)
+	if err != nil {
+		panic(err)
+	}
+	if d.ExpressionAttributeValues == nil {
+		d.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
+	}
+	for k, v := range ea {
+		d.ExpressionAttributeValues[k] = v
+	}
+	return d
+}
+
+func (d *update) SetUpdateExpression(exprs ...*UpdateExpression) *update {
+	m := make(map[string]interface{})
+	ms := make(map[string]string)
+
+	c := 100
+	for _, expr := range exprs {
+		s, mr, nc := expr.f(c)
+		c = nc
+		for k, v := range mr {
+			m[k] = v
+		}
+		if ms[expr.op] == "" {
+			ms[expr.op] = s
+		} else {
+			ms[expr.op] += ", " + s
+		}
+	}
+
+	var s string
+	for k, v := range ms {
+		s += k + " " + v + " "
+	}
+
+	d.UpdateExpression = &s
+	ea, err := dynamodbattribute.MarshalMap(m)
+	if err != nil {
+		panic(err)
+	}
+	if d.ExpressionAttributeValues == nil {
+		d.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
+	}
+	for k, v := range ea {
+		d.ExpressionAttributeValues[k] = v
+	}
 	return d
 }
 
@@ -451,7 +541,7 @@ func (d *update) Build() *dynamodb.UpdateItemInput {
 /***************************************************************************************/
 type query dynamodb.QueryInput
 
-func (table DynamoTable) Query(partitionKeyCondition KeyCondition, rangeKeyCondition *KeyCondition) *query {
+func (table DynamoTable) Query(partitionKeyCondition keyCondition, rangeKeyCondition *keyCondition) *query {
 	q := query(dynamodb.QueryInput{})
 	var e Expression
 	if rangeKeyCondition != nil {
@@ -469,6 +559,7 @@ func (table DynamoTable) Query(partitionKeyCondition KeyCondition, rangeKeyCondi
 
 	return &q
 }
+
 func (d *query) SetConsistentRead(c bool) *query {
 	(*d).ConsistentRead = &c
 	return d
@@ -485,15 +576,23 @@ func (d *query) SetAttributesToGet(fields []dynamoField) *query {
 
 /*func (d *query) SetExclusiveStartKey(fields []dynamoField) *query {
 
-
 }*/
+
+func (d *query) SetLimit(limit int64) *query {
+	d.Limit = &limit
+	return d
+}
+
+func (d *query) SetScanForward(forward bool) *query {
+	d.ScanIndexForward = &forward
+	return d
+}
 
 func (d *query) SetFilterExpression(c Expression) *query {
 	s, m, _ := c.construct(1)
 	d.FilterExpression = &s
 
 	for k, v := range m {
-
 		appendMap(&d.ExpressionAttributeValues, k, v)
 	}
 	return d
