@@ -66,9 +66,40 @@ table := NewMyTable()
 p := table.PutItem(User{"naveen@email.com","password"}).SetConditionExpression(table.PartitionKey.NotExists()).Build()
 r, err := dynamo.PutItem(q)
 
-...
+q := table.
+	UpdateItem(KeyValue{"naveen@email.com", "password"}).
+	SetUpdateExpression(
+		table.loginCount.Increment(1),
+		table.lastLoginDate.SetField(time.Now().UnixNano(), false),
+		table.registrationDate.SetField(time.Now().UnixNano(), true),
+		table.vists.RemoveElemIndex(0),
+		table.preferences.RemoveKey("update_email"),
+	).Build()
+r, err = dynamo.UpdateItem(q)	
 
-q := table.GetItem(KeyValue{"naveen@email.com", "password"}).SetConsistentRead(true).Build()  //This is type GetItemInput
-r, err := dynamo.GetItem(q)
+q = table.
+	Query(
+		table.nameField.Equals("naveen"),
+		&p,
+	).
+	SetLimit(100).
+	SetScanForward(true).
+	SetLocalIndex(table.registrationDateIndex).
+	Build() 
+
+r, err = dynamo.Query(q)	
+
+q = table.
+	BatchGetItem(
+		KeyValue{"naveen@email.com", "password"},
+		KeyValue{"joe@email.com", "password"},
+	).
+	SetConsistentRead(true).
+	Build()
+r, err = dynamo.BatchGetItem(q)	
+
+
+q = table.GetItem(KeyValue{"naveen@email.com", "password"}).SetConsistentRead(true).Build()  //This is type GetItemInput
+r, err = dynamo.GetItem(q)
 
 ```
