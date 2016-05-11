@@ -1,24 +1,9 @@
 package domino
 
 import (
-	"strconv"
+	"fmt"
+	"regexp"
 	"strings"
-)
-
-type Path string
-type Type string
-
-const (
-	S    = "S"
-	SS   = "SS"
-	NN   = "N"
-	NS   = "NS"
-	B    = "B"
-	BS   = "BS"
-	BOOL = "Bool"
-	NULL = "Null"
-	L    = "List"
-	M    = "M"
 )
 
 const (
@@ -30,59 +15,97 @@ const (
 	gte = ">="
 )
 
+var nonalpha *regexp.Regexp = regexp.MustCompile("[^a-zA-Z_0-9]")
+
+func generatePlaceholder(a interface{}, counter int) string {
+	r := fmt.Sprintf("%v_%v", a, counter)
+	return ":" + nonalpha.ReplaceAllString(r, "_")
+}
+
 type Expression interface {
-	toString() string
-	attributeValues() map[string]string //Map from placeholder to value, i.e. ":p" -> ""
+	construct(int) (string, map[string]interface{}, int)
 }
 
-type condition struct {
-	expr         string
-	placeHolders []string
+type UpdateExpression struct {
+	set    *func(counter int) (string, map[string]interface{}, int)
+	add    *func(counter int) (string, map[string]interface{}, int)
+	remove *func(counter int) (string, map[string]interface{}, int)
 }
 
+func (field *dynamoField) SetField(a interface{}, onlyIfEmpty bool) *UpdateExpression {
+	f := func(c int) (string, map[string]interface{}, int) {
+		ph := generatePlaceholder(a, c)
+		r := ph
+		if onlyIfEmpty {
+			r = fmt.Sprintf("if_not_exists(%v,%v)", field.Name, ph)
+		}
+		s := field.name + " = " + r
+		m := map[string]interface{}{
+			ph: a,
+		}
+		c++
+		return s, m, c
+	}
+	return &UpdateExpression{set: &f}
+}
+
+func (field *dynamoFieldNumeric) Add(amount float64) *UpdateExpression {
+	f := func(c int) (string, map[string]interface{}, int) {
+		ph := generatePlaceholder(amount, c)
+		s := field.name + " " + ph
+		m := map[string]interface{}{ph: amount}
+		c++
+		return s, m, c
+	}
+	return &UpdateExpression{add: &f}
+}
+func (field *dynamoCollectionField) Remove(s string) *UpdateExpression {
+	f := func(c int) (string, map[string]interface{}, int) {
+		c++
+		m := make(map[string]interface{})
+		return s, m, c
+	}
+	return &UpdateExpression{add: &f}
+}
+
+func (field *dynamoFieldNumeric) Increment(by int) *UpdateExpression {
+	return field.Add(float64(by))
+}
+
+func (field *dynamoFieldNumeric) Decrement(by int) *UpdateExpression {
+	return field.Add(float64(-by))
+}
+
+/*********************************************************************************/
+/******************************** ExpressionGroups *******************************/
+/*********************************************************************************/
 /*Groups expression by AND and OR operators, i.e. <expr> OR <expr>*/
+
 type expressionGroup struct {
 	expressions []Expression
 	op          string
 }
 
-func (c condition) toString() string {
-	return string(c.expr)
-}
-func (c condition) attributeValues() (m map[string]string) {
-	m = make(map[string]string)
-	for _, r := range c.placeHolders {
-		m[":"+r] = r
-	}
-	return m
-}
-func (c condition) String() string {
-	return c.toString()
-}
-func (e expressionGroup) toString() (r string) {
+func (e expressionGroup) construct(counter int) (string, map[string]interface{}, int) {
 	a := e.expressions
-	r = "("
+	m := make(map[string]interface{})
+	r := "("
+
 	for i := 0; i < len(a); i++ {
 		if i > 0 {
 			r += " " + e.op + " "
 		}
-		r += (a[i]).toString()
-	}
-	r += ")"
-	return
-}
-
-func (c expressionGroup) attributeValues() (m map[string]string) {
-	m = make(map[string]string)
-	for _, e := range c.expressions {
-		for k, v := range e.attributeValues() {
+		substring, placeholders, newCounter := a[i].construct(counter)
+		r += substring
+		for k, v := range placeholders {
 			m[k] = v
 		}
+
+		counter = newCounter
 	}
-	return
-}
-func (c expressionGroup) String() string {
-	return c.toString()
+
+	r += ")"
+	return r, m, counter
 }
 
 func Or(c ...Expression) expressionGroup {
@@ -98,81 +121,158 @@ func And(c ...Expression) expressionGroup {
 	}
 }
 
-func Not(e Expression) condition {
+func (c expressionGroup) String() string {
+	s, _, _ := c.construct(0)
+	return s
+}
+
+/*********************************************************************************/
+/******************************** Negation Expression ****************************/
+/*********************************************************************************/
+type negation struct {
+	expression Expression
+}
+
+func (n negation) construct(counter int) (string, map[string]interface{}, int) {
+	s, m, c := n.expression.construct(counter)
+	r := "(NOT " + s + ")"
+	return r, m, c
+}
+
+func (c negation) String() string {
+	s, _, _ := c.construct(0)
+	return s
+}
+
+func Not(c Expression) negation {
+	return negation{c}
+}
+
+/*********************************************************************************/
+/******************************** Conditions *************************************/
+/*********************************************************************************/
+/*Conditions that only apply to keys*/
+
+type condition struct {
+	exprF func([]string) string
+	args  []interface{}
+}
+
+func (c condition) construct(counter int) (string, map[string]interface{}, int) {
+	a := make([]string, len(c.args))
+	m := make(map[string]interface{})
+	for i, b := range c.args {
+		a[i] = generatePlaceholder(b, counter)
+		m[a[i]] = b
+		counter++
+	}
+	s := c.exprF(a)
+	return s, m, counter
+
+}
+func (c condition) String() string {
+	s, _, _ := c.construct(0)
+	return s
+}
+
+func (p *dynamoField) In(elems ...interface{}) condition {
 	return condition{
-		expr: "(NOT " + e.toString() + ")",
+		exprF: func(placeholders []string) string {
+			return p.name + " in (" + strings.Join(placeholders, ",") + ")"
+		},
+		args: elems,
+	}
+
+}
+
+func (p *dynamoField) Exists() condition {
+	return condition{
+		exprF: func(placeholders []string) string {
+			return "attribute_exists(" + p.name + ")"
+		},
 	}
 }
 
-func (p Path) operation(op string, a string) condition {
+func (p *dynamoField) NotExists() condition {
 	return condition{
-		expr:         "(" + string(p) + " " + op + " :" + a + ")",
-		placeHolders: []string{a},
+		exprF: func(placeholders []string) string {
+			return "attribute_not_exists(" + p.name + ")"
+		},
 	}
 }
 
-func (p Path) Between(a string, b string) condition {
+func (p *dynamoField) Contains(a interface{}) condition {
 	return condition{
-		expr:         "(" + string(p) + " between(:" + a + ", :" + b + "))",
-		placeHolders: []string{a, b},
+		exprF: func(placeholders []string) string {
+			return fmt.Sprintf("contains("+p.name+",%v)", placeholders[0])
+		},
+		args: []interface{}{a},
 	}
 }
 
-func (p Path) In(elems ...string) condition {
+func (p *dynamoField) Size(op string, a interface{}) condition {
 	return condition{
-		expr: string(p) + " in (" + strings.Join(elems, ",") + ")",
+		exprF: func(placeholders []string) string {
+			return fmt.Sprintf("size("+p.name+") "+op+"%v", placeholders[0])
+		},
+		args: []interface{}{a},
 	}
 }
 
-func (p Path) Equals(a string) condition {
+/*********************************************************************************/
+/******************************** Key Conditions *********************************/
+/*********************************************************************************/
+type KeyCondition struct {
+	condition
+}
+
+func (p *dynamoField) operation(op string, a interface{}) KeyCondition {
+	return KeyCondition{
+		condition{
+			exprF: func(placeholders []string) string {
+				return fmt.Sprintf("("+p.name+" "+op+" %v)", placeholders[0])
+			},
+			args: []interface{}{a},
+		},
+	}
+}
+func (p *dynamoField) Equals(a interface{}) KeyCondition {
 	return p.operation(eq, a)
 }
-func (p Path) NotEquals(a string) condition {
+func (p *dynamoField) NotEquals(a interface{}) KeyCondition {
 	return p.operation(neq, a)
 }
-func (p Path) LessThan(a string) condition {
+func (p *dynamoField) LessThan(a interface{}) KeyCondition {
 	return p.operation(lt, a)
 }
-func (p Path) LessThanOrEq(a string) condition {
+func (p *dynamoField) LessThanOrEq(a interface{}) KeyCondition {
 	return p.operation(lte, a)
 }
-func (p Path) GreaterThan(a string) condition {
+func (p *dynamoField) GreaterThan(a interface{}) KeyCondition {
 	return p.operation(gt, a)
 }
-func (p Path) GreaterThanOrEq(a string) condition {
+func (p *dynamoField) GreaterThanOrEq(a interface{}) KeyCondition {
 	return p.operation(gte, a)
 }
 
-func (p Path) Exists() condition {
-	return condition{
-		expr: "attribute_exists(" + string(p) + ")",
+func (p *dynamoField) BeginsWith(a interface{}) KeyCondition {
+	return KeyCondition{
+		condition{
+			exprF: func(placeholders []string) string {
+				return fmt.Sprintf("begins_with("+p.name+",%v)", placeholders[0])
+			},
+			args: []interface{}{a},
+		},
 	}
 }
 
-func (p Path) NotExists() condition {
-	return condition{
-		expr: "attribute_not_exists(" + string(p) + ")",
-	}
-}
-
-func (p Path) BeginsWith(a string) condition {
-	return condition{
-		expr:         "begins_with(" + string(p) + ",:" + a + ")",
-		placeHolders: []string{a},
-	}
-}
-
-func (p Path) Contains(a string) condition {
-	return condition{
-		expr:         "contains(" + string(p) + ",:" + a + ")",
-		placeHolders: []string{a},
-	}
-}
-
-func (p Path) Size(op string, value int) condition {
-	a := strconv.Itoa(value)
-	return condition{
-		expr:         "size(" + string(p) + ") " + op + " :" + a,
-		placeHolders: []string{a},
+func (p *dynamoField) Between(a interface{}, b interface{}) KeyCondition {
+	return KeyCondition{
+		condition{
+			exprF: func(placeholders []string) string {
+				return fmt.Sprintf("("+p.name+" between(%v, %v))", placeholders[0], placeholders[1])
+			},
+			args: []interface{}{a, b},
+		},
 	}
 }

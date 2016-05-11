@@ -12,13 +12,40 @@ sess := session.New(config)
 dynamo := dynamodb.New(sess)
 
 //Define your table schema statically
-table := DynamoDBTable {
-  Name:"Users"
-  PartitionKeyName:"email"
-  RangeKeyName:&"password"
-}
+table := domino.DynamoTable{
+		Name:             "Users",
+		PartitionKeyName: "email",
+		RangeKeyName:     "password",
+	}
+	testField := domino.DynamoField{
+		Table: table,
+		Name:  "test",
+		Type:  S,
+	}
+	thatField := domino.DynamoField{
+		Table: table,
+		Name:  "that",
+		Type:  N,
+	}
+	otherField := domino.DynamoField{
+		Table: table,
+		Name:  "other",
+		Type:  N,
+	}
 
-q := table.GetItem(KeyValue{"naveen@email.com", "password"}).SetConsistentRead(true).Build()  //This is type GetItemInput
+	q := domino.Or(
+		testField.BeginsWith("t"),
+		otherField.Contains(strconv.Itoa(25)),
+		Not(testField.Contains("t")),
+		And(
+			testField.Size(lte, 25),
+			thatField.Size(gte, 25),
+		),
+		testField.Equals("test"),
+		testField.LessThanOrEq("test"),
+		testField.Between("0", "1"),
+		testField.In("0", "1"),
+	)
 r, err := dynamo.GetItem(q)
 
 ```
