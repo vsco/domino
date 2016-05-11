@@ -2,7 +2,7 @@
 Typesafe DynamoDB query DSL for Go
 
 
-Features:
+Features:  
 	* Fully typesafe fluent syntex DSL  
 	* Full Condition and Filter Expression functionality  
 	* Static schema definition  
