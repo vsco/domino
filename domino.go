@@ -1,8 +1,6 @@
 package domino
 
 import (
-	// "fmt"
-	// "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
@@ -223,9 +221,9 @@ type get dynamodb.GetItemInput
 func (table DynamoTable) GetItem(key KeyValue) *get {
 	q := get(dynamodb.GetItemInput{})
 	q.TableName = &table.Name
-	appendMap(&q.Key, table.PartitionKey.Name(), key.partitionKey)
+	appendAttribute(&q.Key, table.PartitionKey.Name(), key.partitionKey)
 	if !table.RangeKey.IsEmpty() {
-		appendMap(&q.Key, table.RangeKey.Name(), key.rangeKey)
+		appendAttribute(&q.Key, table.RangeKey.Name(), key.rangeKey)
 	}
 	return &q
 }
@@ -299,6 +297,7 @@ func (d *batchGet) Build() *dynamodb.BatchGetItemInput {
 
 func (d *batchGet) ExecuteWith(dynamo DynamoDBIFace, nextItem func() interface{}) error {
 
+	retry := 0
 Execute:
 
 	out, err := dynamo.BatchGetItem(d.Build())
@@ -315,6 +314,7 @@ Execute:
 	}
 	if out.UnprocessedKeys != nil && len(out.UnprocessedKeys) > 0 {
 		d.RequestItems = out.UnprocessedKeys
+		retry++
 		goto Execute
 	}
 
@@ -330,14 +330,8 @@ func (table DynamoTable) PutItem(i interface{}) *put {
 
 	q := put(dynamodb.PutItemInput{})
 	q.TableName = &table.Name
-	q.Item, _ = dynamodbattribute.ConvertToMap(i)
+	q.Item, _ = dynamodbattribute.MarshalMap(i)
 	return &q
-}
-
-func (d *put) ReturnOld() *put {
-	s := "ALL_OLD"
-	d.ReturnValues = &s
-	return d
 }
 
 func (d *put) SetConditionExpression(c Expression) *put {
@@ -354,35 +348,109 @@ func (d *put) Build() *dynamodb.PutItemInput {
 	return &r
 }
 
+func (d *put) ExecuteWith(dynamo DynamoDBIFace) error {
+	_, err := dynamo.PutItem(d.Build())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 /***************************************************************************************/
 /************************************** BatchPutItem *********************************/
 /***************************************************************************************/
-type batchPut dynamodb.BatchWriteItemInput
-
-func (table DynamoTable) BatchPutItem(items ...interface{}) *batchPut {
-	puts := make([]*dynamodb.WriteRequest, len(items))
-
-	for i, put := range items {
-		item, err := dynamodbattribute.MarshalMap(put)
-		if err != nil {
-			panic(err)
-		}
-		puts[i] = &dynamodb.WriteRequest{
-			PutRequest: &dynamodb.PutRequest{
-				Item: item,
-			},
-		}
-	}
-	q := batchPut(dynamodb.BatchWriteItemInput{
-		RequestItems: make(map[string][]*dynamodb.WriteRequest),
-	})
-	q.RequestItems[table.Name] = puts
-	return &q
+type batchPut struct {
+	batches []dynamodb.BatchWriteItemInput
+	table   DynamoTable
 }
 
-func (d *batchPut) Build() *dynamodb.BatchWriteItemInput {
-	r := dynamodb.BatchWriteItemInput(*d)
+func (table DynamoTable) BatchWriteItem() *batchPut {
+	r := batchPut{
+		[]dynamodb.BatchWriteItemInput{},
+		table,
+	}
 	return &r
+}
+
+func (d *batchPut) writeItems(putOnly bool, items ...interface{}) *batchPut {
+	batches := []dynamodb.BatchWriteItemInput{}
+	batchCount := len(items)/25 + 1
+
+	for i := 1; i <= batchCount; i++ {
+		batch := dynamodb.BatchWriteItemInput{
+			RequestItems: make(map[string][]*dynamodb.WriteRequest),
+		}
+		puts := []*dynamodb.WriteRequest{}
+
+		for len(items) > 0 && len(puts) < 25 {
+			item := items[0]
+			items = items[1:]
+			dynamoItem, err := dynamodbattribute.MarshalMap(item)
+			if err != nil {
+				panic(err)
+			}
+			var write *dynamodb.WriteRequest
+			if putOnly {
+				write = &dynamodb.WriteRequest{
+					PutRequest: &dynamodb.PutRequest{
+						Item: dynamoItem,
+					},
+				}
+			} else {
+				write = &dynamodb.WriteRequest{
+					DeleteRequest: &dynamodb.DeleteRequest{
+						Key: dynamoItem,
+					},
+				}
+			}
+
+			puts = append(puts, write)
+		}
+
+		batch.RequestItems[d.table.Name] = puts
+		batches = append(batches, batch)
+	}
+	d.batches = append(d.batches, batches...)
+	return d
+}
+
+func (d *batchPut) PutItems(items ...interface{}) *batchPut {
+	d.writeItems(true, items...)
+	return d
+}
+func (d *batchPut) DeleteItems(keys ...KeyValue) *batchPut {
+	a := []interface{}{}
+	for _, key := range keys {
+		m := map[string]interface{}{}
+		appendKeyInterface(&m, d.table, key)
+		a = append(a, m)
+	}
+	d.writeItems(false, a...)
+	return d
+}
+
+func (d *batchPut) Build() []dynamodb.BatchWriteItemInput {
+	return d.batches
+}
+
+func (d *batchPut) ExecuteWith(dynamo DynamoDBIFace, unprocessedItem func() interface{}) error {
+
+	for _, batch := range d.Build() {
+		out, err := dynamo.BatchWriteItem(&batch)
+		if err != nil {
+			return err
+		}
+		for _, items := range out.UnprocessedItems {
+			for _, item := range items {
+				err = dynamodbattribute.UnmarshalMap(item.PutRequest.Item, unprocessedItem())
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 /***************************************************************************************/
@@ -393,67 +461,28 @@ type deleteItem dynamodb.DeleteItemInput
 func (table DynamoTable) DeleteItem(key KeyValue) *deleteItem {
 	q := deleteItem(dynamodb.DeleteItemInput{})
 	q.TableName = &table.Name
-	appendMap(&q.Key, table.PartitionKey.Name(), key.partitionKey)
-	if !table.RangeKey.IsEmpty() {
-		appendMap(&q.Key, table.RangeKey.Name(), key.rangeKey)
-	}
+	appendKeyAttribute(&q.Key, table, key)
 	return &q
 }
 
 func (d *deleteItem) SetConditionExpression(c Expression) *deleteItem {
 	s, m, _ := c.construct(1)
-
 	d.ConditionExpression = &s
 	d.ExpressionAttributeValues, _ = dynamodbattribute.MarshalMap(m)
+	return d
+}
 
-	return d
-}
-func (d *deleteItem) ReturnOld() *deleteItem {
-	s := "ALL_OLD"
-	d.ReturnValues = &s
-	return d
-}
 func (d *deleteItem) Build() *dynamodb.DeleteItemInput {
 	r := dynamodb.DeleteItemInput(*d)
 	return &r
 }
 
-/***************************************************************************************/
-/************************************** BatchDeleteItem *********************************/
-/***************************************************************************************/
-type batchDelete dynamodb.BatchWriteItemInput
-
-func (table DynamoTable) BatchDeleteItem(items ...KeyValue) *batchDelete {
-	puts := make([]*dynamodb.WriteRequest, len(items))
-
-	for i, kv := range items {
-		m := map[string]interface{}{
-			table.PartitionKey.Name(): kv.partitionKey,
-		}
-		if !table.RangeKey.IsEmpty() {
-			m[table.RangeKey.Name()] = kv.rangeKey
-		}
-
-		key, err := dynamodbattribute.MarshalMap(m)
-		if err != nil {
-			panic(err)
-		}
-		puts[i] = &dynamodb.WriteRequest{
-			DeleteRequest: &dynamodb.DeleteRequest{
-				Key: key,
-			},
-		}
+func (d *deleteItem) ExecuteWith(dynamo DynamoDBIFace) error {
+	_, err := dynamo.DeleteItem(d.Build())
+	if err != nil {
+		return err
 	}
-	q := batchDelete(dynamodb.BatchWriteItemInput{
-		RequestItems: make(map[string][]*dynamodb.WriteRequest),
-	})
-	q.RequestItems[table.Name] = puts
-	return &q
-}
-
-func (d *batchDelete) Build() *dynamodb.BatchWriteItemInput {
-	r := dynamodb.BatchWriteItemInput(*d)
-	return &r
+	return nil
 }
 
 /***************************************************************************************/
@@ -465,17 +494,10 @@ func (table DynamoTable) UpdateItem(key KeyValue) *update {
 
 	q := update(dynamodb.UpdateItemInput{})
 	q.TableName = &table.Name
-	appendMap(&q.Key, table.PartitionKey.Name(), key.partitionKey)
-	if !table.RangeKey.IsEmpty() {
-		appendMap(&q.Key, table.RangeKey.Name(), key.rangeKey)
-	}
-	return &q
-}
 
-func (d *update) ReturnOld() *update {
-	s := "ALL_OLD"
-	d.ReturnValues = &s
-	return d
+	appendKeyAttribute(&q.Key, table, key)
+
+	return &q
 }
 
 func (d *update) SetConditionExpression(c Expression) *update {
@@ -498,7 +520,7 @@ func (d *update) SetUpdateExpression(exprs ...*UpdateExpression) *update {
 	m := make(map[string]interface{})
 	ms := make(map[string]string)
 
-	c := 100
+	c := uint(100)
 	for _, expr := range exprs {
 		s, mr, nc := expr.f(c)
 		c = nc
@@ -536,6 +558,14 @@ func (d *update) Build() *dynamodb.UpdateItemInput {
 	return &r
 }
 
+func (d *update) ExecuteWith(dynamo DynamoDBIFace) error {
+	_, err := dynamo.UpdateItem(d.Build())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 /***************************************************************************************/
 /********************************************** Query **********************************/
 /***************************************************************************************/
@@ -554,7 +584,7 @@ func (table DynamoTable) Query(partitionKeyCondition keyCondition, rangeKeyCondi
 	q.TableName = &table.Name
 	q.KeyConditionExpression = &s
 	for k, v := range m {
-		appendMap(&q.ExpressionAttributeValues, k, v)
+		appendAttribute(&q.ExpressionAttributeValues, k, v)
 	}
 
 	return &q
@@ -574,10 +604,6 @@ func (d *query) SetAttributesToGet(fields []dynamoField) *query {
 	return d
 }
 
-/*func (d *query) SetExclusiveStartKey(fields []dynamoField) *query {
-
-}*/
-
 func (d *query) SetLimit(limit int64) *query {
 	d.Limit = &limit
 	return d
@@ -593,7 +619,7 @@ func (d *query) SetFilterExpression(c Expression) *query {
 	d.FilterExpression = &s
 
 	for k, v := range m {
-		appendMap(&d.ExpressionAttributeValues, k, v)
+		appendAttribute(&d.ExpressionAttributeValues, k, v)
 	}
 	return d
 }
@@ -613,8 +639,52 @@ func (d *query) Build() *dynamodb.QueryInput {
 	return &r
 }
 
+func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem func() interface{}) error {
+
+Execute:
+	out, err := dynamodb.Query(d.Build())
+	if err != nil {
+		return err
+	}
+	for _, item := range out.Items {
+		err = dynamodbattribute.UnmarshalMap(item, nextItem())
+		if err != nil {
+			return err
+		}
+	}
+	if out.LastEvaluatedKey != nil {
+		d.ExclusiveStartKey = out.LastEvaluatedKey
+		goto Execute
+	}
+	return nil
+}
+
 /*Helpers*/
-func appendMap(m *map[string]*dynamodb.AttributeValue, key string, value interface{}) (*map[string]*dynamodb.AttributeValue, error) {
+func appendKeyInterface(m *map[string]interface{}, table DynamoTable, key KeyValue) {
+	if *m == nil {
+		*m = map[string]interface{}{}
+	}
+	(*m)[table.PartitionKey.Name()] = key.partitionKey
+
+	if !table.RangeKey.IsEmpty() {
+		(*m)[table.RangeKey.Name()] = key.rangeKey
+	}
+
+}
+func appendKeyAttribute(m *map[string]*dynamodb.AttributeValue, table DynamoTable, key KeyValue) (err error) {
+	err = appendAttribute(m, table.PartitionKey.Name(), key.partitionKey)
+	if err != nil {
+		return
+	} else if !table.RangeKey.IsEmpty() {
+		err = appendAttribute(m, table.RangeKey.Name(), key.rangeKey)
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
+func appendAttribute(m *map[string]*dynamodb.AttributeValue, key string, value interface{}) (err error) {
 	if *m == nil {
 		*m = make(map[string]*dynamodb.AttributeValue)
 	}
@@ -622,5 +692,5 @@ func appendMap(m *map[string]*dynamodb.AttributeValue, key string, value interfa
 	if err == nil {
 		(*m)[key] = v
 	}
-	return m, err
+	return
 }

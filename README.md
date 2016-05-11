@@ -9,14 +9,14 @@ Features:
 	* Streaming results for Query, Scan and BatchGet operations  
 
 
-```
+```go
 
 config := s3.GetAwsConfig("123", "123").WithEndpoint("http://127.0.0.1:8080")
 sess := session.New(config)
 dynamo := dynamodb.New(sess)
 
 //Define your table schema statically
-type MyTable struct {
+type UserTable struct {
 	DynamoTable
 	emailField    dynamoFieldString
 	passwordField dynamoFieldString
@@ -38,7 +38,7 @@ type User struct {
 	Password string `json:"password"`
 }
 
-func NewMyTable() MyTable {
+func NewUserTable() MyTable {
 	pk := DynamoFieldString("email")
 	rk := DynamoFieldString("password")
 	firstName := DynamoFieldString("firstName")
@@ -72,7 +72,7 @@ Use a fluent style DSL to interact with your table. All DynamoDB data operations
 
 
 Put Item
-```
+```go
 p := table.
 	PutItem(User{"naveen@email.com","password"}).
 	SetConditionExpression(
@@ -83,7 +83,7 @@ r, err := dynamo.PutItem(q)
 ```
 
 GetItem
-```
+```go
 q = table.
 	GetItem(KeyValue{"naveen@email.com", "password"}).
 	SetConsistentRead(true).
@@ -93,7 +93,7 @@ r, err = dynamo.GetItem(q)
 
 
 Update Item
-```
+```go
 q := table.
 	UpdateItem(KeyValue{"naveen@email.com", "password"}).
 	SetUpdateExpression(
@@ -107,7 +107,7 @@ r, err = dynamo.UpdateItem(q)
 ```
 
 Query
-```
+```go
 p = table.lastNameField.Equals("Gattu")
 q = table.
 	Query(
@@ -123,7 +123,7 @@ r, err = dynamo.Query(q)
 ```
 
 Batch Get Item
-```
+```go
 q = table.
 	BatchGetItem(
 		KeyValue{"naveen@email.com", "password"},
@@ -136,7 +136,7 @@ r, err = dynamo.BatchGetItem(q)
 
 
 Fully typesafe condition expression and filter expression support.
-```
+```go
 expr := Or(
 		table.lastNameField.Contains("gattu"),
 		Not(table.registrationDate.Contains(12345)),

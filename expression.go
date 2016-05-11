@@ -7,7 +7,7 @@ import (
 )
 
 type Expression interface {
-	construct(int) (string, map[string]interface{}, int)
+	construct(uint) (string, map[string]interface{}, uint)
 }
 type expressionGroup struct {
 	expressions []Expression
@@ -38,7 +38,7 @@ const (
 
 var nonalpha *regexp.Regexp = regexp.MustCompile("[^a-zA-Z_0-9]")
 
-func generatePlaceholder(a interface{}, counter int) string {
+func generatePlaceholder(a interface{}, counter uint) string {
 	r := fmt.Sprintf("%v_%v", a, counter)
 	return ":" + nonalpha.ReplaceAllString(r, "_")
 }
@@ -48,7 +48,7 @@ func generatePlaceholder(a interface{}, counter int) string {
 /*********************************************************************************/
 /*Groups expression by AND and OR operators, i.e. <expr> OR <expr>*/
 
-func (e expressionGroup) construct(counter int) (string, map[string]interface{}, int) {
+func (e expressionGroup) construct(counter uint) (string, map[string]interface{}, uint) {
 	a := e.expressions
 	m := make(map[string]interface{})
 	r := "("
@@ -92,7 +92,7 @@ func (c expressionGroup) String() string {
 /******************************** Negation Expression ****************************/
 /*********************************************************************************/
 
-func (n negation) construct(counter int) (string, map[string]interface{}, int) {
+func (n negation) construct(counter uint) (string, map[string]interface{}, uint) {
 	s, m, c := n.expression.construct(counter)
 	r := "(NOT " + s + ")"
 	return r, m, c
@@ -112,7 +112,7 @@ func Not(c Expression) negation {
 /*********************************************************************************/
 /*Conditions that only apply to keys*/
 
-func (c condition) construct(counter int) (string, map[string]interface{}, int) {
+func (c condition) construct(counter uint) (string, map[string]interface{}, uint) {
 	a := make([]string, len(c.args))
 	m := make(map[string]interface{})
 	for i, b := range c.args {
@@ -233,11 +233,11 @@ func (p *dynamoField) Between(a interface{}, b interface{}) keyCondition {
 /*********************************************************************************/
 type UpdateExpression struct {
 	op string
-	f  func(counter int) (string, map[string]interface{}, int)
+	f  func(counter uint) (string, map[string]interface{}, uint)
 }
 
 func (field *dynamoField) SetField(a interface{}, onlyIfEmpty bool) *UpdateExpression {
-	f := func(c int) (string, map[string]interface{}, int) {
+	f := func(c uint) (string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(a, c)
 		r := ph
 		if onlyIfEmpty {
@@ -254,7 +254,7 @@ func (field *dynamoField) SetField(a interface{}, onlyIfEmpty bool) *UpdateExpre
 }
 
 func (field *dynamoFieldNumeric) Add(amount float64) *UpdateExpression {
-	f := func(c int) (string, map[string]interface{}, int) {
+	f := func(c uint) (string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(amount, c)
 		s := field.name + " " + ph
 		m := map[string]interface{}{ph: amount}
@@ -264,7 +264,7 @@ func (field *dynamoFieldNumeric) Add(amount float64) *UpdateExpression {
 	return &UpdateExpression{op: "ADD", f: f}
 }
 func (field *dynamoFieldMap) RemoveKey(s string) *UpdateExpression {
-	f := func(c int) (string, map[string]interface{}, int) {
+	f := func(c uint) (string, map[string]interface{}, uint) {
 		c++
 		m := make(map[string]interface{})
 		return s, m, c
@@ -272,8 +272,8 @@ func (field *dynamoFieldMap) RemoveKey(s string) *UpdateExpression {
 	return &UpdateExpression{op: "REMOVE", f: f}
 }
 
-func (field *dynamoCollectionField) RemoveElemIndex(idx int) *UpdateExpression {
-	f := func(c int) (string, map[string]interface{}, int) {
+func (field *dynamoCollectionField) RemoveElemIndex(idx uint) *UpdateExpression {
+	f := func(c uint) (string, map[string]interface{}, uint) {
 		c++
 		s := fmt.Sprintf("%v[%v]", field.name, idx)
 		m := make(map[string]interface{})
@@ -282,10 +282,10 @@ func (field *dynamoCollectionField) RemoveElemIndex(idx int) *UpdateExpression {
 	return &UpdateExpression{op: "REMOVE", f: f}
 }
 
-func (field *dynamoFieldNumeric) Increment(by int) *UpdateExpression {
+func (field *dynamoFieldNumeric) Increment(by uint) *UpdateExpression {
 	return field.Add(float64(by))
 }
 
-func (field *dynamoFieldNumeric) Decrement(by int) *UpdateExpression {
-	return field.Add(float64(-by))
+func (field *dynamoFieldNumeric) Decrement(by uint) *UpdateExpression {
+	return field.Add(-float64(by))
 }

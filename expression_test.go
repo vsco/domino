@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-type MyTable struct {
+type UserTable struct {
 	DynamoTable
 	emailField    dynamoFieldString
 	passwordField dynamoFieldString
@@ -30,15 +30,15 @@ type User struct {
 	Password string `json:"password"`
 }
 
-func NewMyTable() MyTable {
+func NewUserTable() UserTable {
 	pk := DynamoFieldString("email")
 	rk := DynamoFieldString("password")
 	firstName := DynamoFieldString("firstName")
 	lastName := DynamoFieldString("lastName")
 	reg := DynamoFieldNumeric("registrationDate")
-	return MyTable{
+	return UserTable{
 		DynamoTable{
-			Name:         "mytable",
+			Name:         "UserTable",
 			PartitionKey: pk,
 			RangeKey:     rk,
 		},
@@ -57,14 +57,14 @@ func NewMyTable() MyTable {
 }
 
 func TestGetItem(b *testing.T) {
-	table := NewMyTable()
+	table := NewUserTable()
 
 	q := table.GetItem(KeyValue{"test", "password"}).Build()
 	fmt.Println(q)
 }
 
 func TestBatchGetItem(b *testing.T) {
-	table := NewMyTable()
+	table := NewUserTable()
 
 	q := table.
 		BatchGetItem(
@@ -75,8 +75,25 @@ func TestBatchGetItem(b *testing.T) {
 	fmt.Println(q)
 }
 
+func TestBatchPutItem(b *testing.T) {
+	table := NewUserTable()
+
+	q := table.
+		BatchWriteItem().
+		PutItems(
+			User{Email: "bob@email.com", Password: "password"},
+			User{Email: "joe@email.com", Password: "password"},
+			User{Email: "alice@email.com", Password: "password"},
+		).
+		DeleteItems(
+			KeyValue{"naveen@email.com", "password"},
+		).
+		Build()
+	fmt.Println(q)
+}
+
 func TestUpdateItem(b *testing.T) {
-	table := NewMyTable()
+	table := NewUserTable()
 
 	q := table.
 		UpdateItem(KeyValue{"naveen@email.com", "password"}).
@@ -92,7 +109,7 @@ func TestUpdateItem(b *testing.T) {
 }
 
 func TestQuery(b *testing.T) {
-	table := NewMyTable()
+	table := NewUserTable()
 	p := table.lastNameField.Equals("Gattu")
 	q := table.
 		Query(
@@ -107,19 +124,18 @@ func TestQuery(b *testing.T) {
 }
 
 func TestPutItem(b *testing.T) {
-	table := NewMyTable()
+	table := NewUserTable()
 	item := User{Email: "joe@email.com", Password: "password"}
 
 	q := table.
 		PutItem(item).
-		ReturnOld().
 		SetConditionExpression(
 			table.vists.Size(lte, 25)).
 		Build()
 	fmt.Printf("%++v", q)
 }
 func TestExpressions(b *testing.T) {
-	table := NewMyTable()
+	table := NewUserTable()
 
 	q := Or(
 		table.registrationDate.BeginsWith("t"),
