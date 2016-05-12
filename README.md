@@ -163,6 +163,9 @@ q = table.
 Streaming Results 
 
 ```go
+
+	/*Query*/
+
 	p := table.passwordField.BeginsWith("password")
 	q := table.
 		Query(
@@ -172,14 +175,36 @@ Streaming Results
 		SetLimit(100).
 		SetScanForward(true)
 
-	users := []User{}
 	channel, errChan := q.ExecuteWith(db, &User{})
 
 	for {
 		select {
 		case u, ok := <-channel:
 			if ok {
-				fmt.Println(u)
+				fmt.Println(u.(*User))
+			}
+		case err = <-errChan:
+
+		}
+	}
+
+```
+
+
+```go
+	
+	/*Scan*/
+
+	p := table.passwordField.BeginsWith("password")
+	q := table.Scan().SetLimit(100).		
+
+	channel, errChan := q.ExecuteWith(db, &User{})
+
+	for {
+		select {
+		case u, ok := <-channel:
+			if ok {
+				fmt.Println(u.(*User))
 			}
 		case err = <-errChan:
 
