@@ -7,3 +7,4 @@ import:
   - service/dynamodb
   - service/dynamodb/dynamodbattribute
 - package: github.com/negator/gotask
+- package: github.com/stretchr/testify

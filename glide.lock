@@ -1,5 +1,5 @@
-hash: 69f4956593c40291a3a953d3217e8b3cdc75ca24a86ca8fb83062cb2ea05b355
-updated: 2016-05-10T22:42:38.246821847-07:00
+hash: e76408d08b6dc36ec61ff2064b69ecfcf811aa40fe7bf52c78369f7c5684f5be
+updated: 2016-05-11T15:14:46.905382843-07:00
 imports:
 - name: github.com/aws/aws-sdk-go
   version: d621b01e9d7ef5dcecbc323939ed97f9862cd6fd
@@ -26,4 +26,6 @@ imports:
   version: 0b12d6b521d83fc7f755e7cfc1b1fbdd35a01a74
 - name: github.com/negator/gotask
   version: 70aa793e61bdc17762417b33c1f9a32e8b6e609b
+- name: github.com/stretchr/testify
+  version: 6cb3b85ef5a0efef77caef88363ec4d4b5c0976d
 devImports: []

@@ -221,7 +221,7 @@ func (p *dynamoField) Between(a interface{}, b interface{}) keyCondition {
 	return keyCondition{
 		condition{
 			exprF: func(placeholders []string) string {
-				return fmt.Sprintf("("+p.name+" between(%v, %v))", placeholders[0], placeholders[1])
+				return fmt.Sprintf("("+p.name+" between %v and %v)", placeholders[0], placeholders[1])
 			},
 			args: []interface{}{a, b},
 		},
@@ -263,6 +263,19 @@ func (field *dynamoFieldNumeric) Add(amount float64) *UpdateExpression {
 	}
 	return &UpdateExpression{op: "ADD", f: f}
 }
+
+func (field *dynamoCollectionField) Append(a interface{}) *UpdateExpression {
+	f := func(c uint) (string, map[string]interface{}, uint) {
+		ph := generatePlaceholder(a, c)
+		s := fmt.Sprintf(field.name+" = list_append(%v,"+field.name+")", ph)
+		// s := field.name + " " + ph
+		m := map[string]interface{}{ph: []interface{}{a}}
+		c++
+		return s, m, c
+	}
+	return &UpdateExpression{op: "SET", f: f}
+}
+
 func (field *dynamoFieldMap) RemoveKey(s string) *UpdateExpression {
 	f := func(c uint) (string, map[string]interface{}, uint) {
 		c++

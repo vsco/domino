@@ -1,11 +1,15 @@
 package domino
 
 import (
+	"fmt"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
 
 type DynamoDBIFace interface {
+	CreateTable(input *dynamodb.CreateTableInput) (*dynamodb.CreateTableOutput, error)
+	DeleteTable(input *dynamodb.DeleteTableInput) (*dynamodb.DeleteTableOutput, error)
 	GetItem(input *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error)
 	BatchGetItem(input *dynamodb.BatchGetItemInput) (*dynamodb.BatchGetItemOutput, error)
 	PutItem(input *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error)
@@ -243,11 +247,11 @@ func (d *get) Build() *dynamodb.GetItemInput {
 func (d *get) ExecuteWith(dynamo DynamoDBIFace, item interface{}) error {
 	out, err := dynamo.GetItem(d.Build())
 	if err != nil {
-		return err
+		return handleAwsErr(err)
 	}
 	err = dynamodbattribute.UnmarshalMap(out.Item, item)
 	if err != nil {
-		return err
+		return handleAwsErr(err)
 	}
 	return nil
 }
@@ -302,13 +306,13 @@ Execute:
 
 	out, err := dynamo.BatchGetItem(d.Build())
 	if err != nil {
-		return err
+		return handleAwsErr(err)
 	}
 	for _, r := range out.Responses {
 		for _, item := range r {
 			err = dynamodbattribute.UnmarshalMap(item, nextItem())
 			if err != nil {
-				return err
+				return handleAwsErr(err)
 			}
 		}
 	}
@@ -351,7 +355,7 @@ func (d *put) Build() *dynamodb.PutItemInput {
 func (d *put) ExecuteWith(dynamo DynamoDBIFace) error {
 	_, err := dynamo.PutItem(d.Build())
 	if err != nil {
-		return err
+		return handleAwsErr(err)
 	}
 	return nil
 }
@@ -438,13 +442,14 @@ func (d *batchPut) ExecuteWith(dynamo DynamoDBIFace, unprocessedItem func() inte
 	for _, batch := range d.Build() {
 		out, err := dynamo.BatchWriteItem(&batch)
 		if err != nil {
-			return err
+			return handleAwsErr(err)
 		}
+
 		for _, items := range out.UnprocessedItems {
 			for _, item := range items {
 				err = dynamodbattribute.UnmarshalMap(item.PutRequest.Item, unprocessedItem())
 				if err != nil {
-					return err
+					return handleAwsErr(err)
 				}
 			}
 		}
@@ -480,7 +485,7 @@ func (d *deleteItem) Build() *dynamodb.DeleteItemInput {
 func (d *deleteItem) ExecuteWith(dynamo DynamoDBIFace) error {
 	_, err := dynamo.DeleteItem(d.Build())
 	if err != nil {
-		return err
+		return handleAwsErr(err)
 	}
 	return nil
 }
@@ -561,7 +566,7 @@ func (d *update) Build() *dynamodb.UpdateItemInput {
 func (d *update) ExecuteWith(dynamo DynamoDBIFace) error {
 	_, err := dynamo.UpdateItem(d.Build())
 	if err != nil {
-		return err
+		return handleAwsErr(err)
 	}
 	return nil
 }
@@ -644,12 +649,15 @@ func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem func() interface{})
 Execute:
 	out, err := dynamodb.Query(d.Build())
 	if err != nil {
-		return err
+		return handleAwsErr(err)
 	}
+
 	for _, item := range out.Items {
-		err = dynamodbattribute.UnmarshalMap(item, nextItem())
+		r := nextItem()
+		err = dynamodbattribute.UnmarshalMap(item, r)
+
 		if err != nil {
-			return err
+			return handleAwsErr(err)
 		}
 	}
 	if out.LastEvaluatedKey != nil {
@@ -659,7 +667,84 @@ Execute:
 	return nil
 }
 
-/*Helpers*/
+/**********************************************************************************************/
+/********************************************** Create Table **********************************/
+/**********************************************************************************************/
+type createTable dynamodb.CreateTableInput
+
+func (table DynamoTable) CreateTable() *createTable {
+	pk := table.PartitionKey.Name()
+	pkt := "HASH"
+	pktt := table.PartitionKey.Type()
+
+	k := []*dynamodb.KeySchemaElement{
+		&dynamodb.KeySchemaElement{
+			AttributeName: &pk,
+			KeyType:       &pkt,
+		},
+	}
+	r := int64(100)
+	w := int64(100)
+	p := &dynamodb.ProvisionedThroughput{
+		ReadCapacityUnits:  &r,
+		WriteCapacityUnits: &w,
+	}
+
+	a := []*dynamodb.AttributeDefinition{
+		&dynamodb.AttributeDefinition{
+			AttributeName: &pk,
+			AttributeType: &pktt,
+		},
+	}
+
+	if !table.RangeKey.IsEmpty() {
+		rk := table.RangeKey.Name()
+		rkt := "RANGE"
+		rktt := table.RangeKey.Type()
+		k = append(k, &dynamodb.KeySchemaElement{AttributeName: &rk, KeyType: &rkt})
+		a = append(a, &dynamodb.AttributeDefinition{AttributeName: &rk, AttributeType: &rktt})
+	}
+	t := dynamodb.CreateTableInput{
+		TableName:             &table.Name,
+		KeySchema:             k,
+		ProvisionedThroughput: p,
+		AttributeDefinitions:  a,
+	}
+	c := createTable(t)
+	return &c
+}
+
+func (d *createTable) Build() *dynamodb.CreateTableInput {
+	r := dynamodb.CreateTableInput(*d)
+	return &r
+}
+
+func (d *createTable) ExecuteWith(dynamo DynamoDBIFace) error {
+	_, err := dynamo.CreateTable(d.Build())
+	return handleAwsErr(err)
+}
+
+/**********************************************************************************************/
+/********************************************** Delete Table **********************************/
+/**********************************************************************************************/
+type deleteTable dynamodb.DeleteTableInput
+
+func (table DynamoTable) DeleteTable() *deleteTable {
+	r := deleteTable(dynamodb.DeleteTableInput{TableName: &table.Name})
+	return &r
+}
+
+func (d *deleteTable) Build() *dynamodb.DeleteTableInput {
+	r := dynamodb.DeleteTableInput(*d)
+	return &r
+}
+
+func (d *deleteTable) ExecuteWith(dynamo DynamoDBIFace) error {
+	_, err := dynamo.DeleteTable(d.Build())
+	return handleAwsErr(err)
+}
+
+/*****************************************   Helpers  ******************************************/
 func appendKeyInterface(m *map[string]interface{}, table DynamoTable, key KeyValue) {
 	if *m == nil {
 		*m = map[string]interface{}{}
@@ -693,4 +778,24 @@ func appendAttribute(m *map[string]*dynamodb.AttributeValue, key string, value i
 		(*m)[key] = v
 	}
 	return
+}
+
+func handleAwsErr(err error) error {
+	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			// Get error details
+			fmt.Println("Error:", awsErr.Code(), awsErr.Message())
+
+			// Prints out full error message, including original error if there was one.
+			fmt.Println("Error:", awsErr.Error())
+
+			// Get original error
+			if origErr := awsErr.OrigErr(); origErr != nil {
+				// operate on original error.
+			}
+		} else {
+			fmt.Println(err.Error())
+		}
+	}
+	return err
 }
