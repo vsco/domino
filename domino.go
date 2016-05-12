@@ -14,6 +14,7 @@ type DynamoDBIFace interface {
 	BatchGetItem(input *dynamodb.BatchGetItemInput) (*dynamodb.BatchGetItemOutput, error)
 	PutItem(input *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error)
 	Query(input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error)
+	Scan(input *dynamodb.ScanInput) (*dynamodb.ScanOutput, error)
 	UpdateItem(input *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error)
 	DeleteItem(input *dynamodb.DeleteItemInput) (*dynamodb.DeleteItemOutput, error)
 	BatchWriteItem(input *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error)
@@ -609,8 +610,9 @@ func (d *query) SetAttributesToGet(fields []dynamoField) *query {
 	return d
 }
 
-func (d *query) SetLimit(limit int64) *query {
-	d.Limit = &limit
+func (d *query) SetLimit(limit int) *query {
+	s := int64(limit)
+	d.Limit = &s
 	return d
 }
 
@@ -659,6 +661,104 @@ func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c cha
 			return
 		}
 		out, err := dynamodb.Query(d.Build())
+		if err != nil {
+			e <- handleAwsErr(err)
+			return
+		}
+
+		for _, item := range out.Items {
+			err = dynamodbattribute.UnmarshalMap(item, &nextItem)
+
+			if err != nil {
+				e <- handleAwsErr(err)
+				return
+			} else {
+				count++
+				c <- nextItem
+			}
+		}
+
+		if out.LastEvaluatedKey != nil {
+			d.ExclusiveStartKey = out.LastEvaluatedKey
+			goto Execute
+		}
+		return
+	}()
+
+	return
+}
+
+/***************************************************************************************/
+/********************************************** Scan **********************************/
+/***************************************************************************************/
+type scan dynamodb.ScanInput
+
+func (table DynamoTable) Scan() *scan {
+	q := scan(dynamodb.ScanInput{})
+	q.TableName = &table.Name
+	return &q
+}
+
+func (d *scan) SetConsistentRead(c bool) *scan {
+	(*d).ConsistentRead = &c
+	return d
+}
+func (d *scan) SetAttributesToGet(fields []dynamoField) *scan {
+	a := make([]*string, len(fields))
+	for i, f := range fields {
+		v := f.Name()
+		a[i] = &v
+	}
+	(*d).AttributesToGet = a
+	return d
+}
+
+func (d *scan) SetLimit(limit int) *scan {
+	s := int64(limit)
+	d.Limit = &s
+	return d
+}
+
+func (d *scan) SetFilterExpression(c Expression) *scan {
+	s, m, _ := c.construct(1)
+	d.FilterExpression = &s
+
+	for k, v := range m {
+		appendAttribute(&d.ExpressionAttributeValues, k, v)
+	}
+	return d
+}
+
+func (d *scan) SetLocalIndex(idx LocalSecondaryIndex) *scan {
+	d.IndexName = &idx.Name
+	return d
+}
+
+func (d *scan) SetGlobalIndex(idx GlobalSecondaryIndex) *scan {
+	d.IndexName = &idx.Name
+	return d
+}
+
+func (d *scan) Build() *dynamodb.ScanInput {
+	r := dynamodb.ScanInput(*d)
+	return &r
+}
+
+func (d *scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
+
+	c = make(chan interface{})
+	e = make(chan error)
+
+	go func() {
+		defer close(c)
+		defer close(e)
+
+		var count int64 = 0
+	Execute:
+		if d.Limit != nil && count >= *d.Limit {
+			return
+		}
+		out, err := dynamodb.Scan(d.Build())
 		if err != nil {
 			e <- handleAwsErr(err)
 			return

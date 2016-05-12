@@ -1,7 +1,7 @@
 package domino
 
 import (
-	"fmt"
+	// "fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -301,11 +301,63 @@ func TestDynamoQuery(t *testing.T) {
 			table.emailField.Equals("naveen@email.com"),
 			&p,
 		).
-		SetLimit(100).
+		SetLimit(limit).
 		SetScanForward(true)
 
 	users := []User{}
 	channel, errChan := q.ExecuteWith(db, &User{})
+
+SELECT:
+	for {
+		select {
+		case u := <-channel:
+			if u != nil {
+				users = append(users, *u.(*User))
+			} else {
+				break SELECT
+			}
+		case err = <-errChan:
+			break SELECT
+		}
+	}
+
+	assert.Nil(t, err)
+	assert.Equal(t, limit, len(users))
+}
+func TestDynamoScan(t *testing.T) {
+
+	table := NewUserTable()
+	db := NewDB()
+
+	err := table.CreateTable().ExecuteWith(db)
+	defer table.DeleteTable().ExecuteWith(db)
+
+	assert.Nil(t, err)
+
+	me := &User{Email: "naveen@email.com", Password: "password"}
+	items := []interface{}{me}
+	for i := 0; i < 1000; i++ {
+		e := "naveen@email.com"
+		items = append(items, &User{Email: e, Password: "password" + strconv.Itoa(i)})
+	}
+
+	ui := []*User{}
+	w := table.BatchWriteItem().PutItems(items...)
+
+	err = w.ExecuteWith(db, func() interface{} {
+		u := User{}
+		ui = append(ui, &u)
+		return &u
+	})
+
+	assert.Nil(t, err)
+
+	assert.Empty(t, ui)
+
+	limit := 1000
+	users := []User{}
+
+	channel, errChan := table.Scan().SetLimit(limit).ExecuteWith(db, &User{})
 
 SELECT:
 	for {
