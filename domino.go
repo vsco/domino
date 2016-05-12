@@ -644,27 +644,46 @@ func (d *query) Build() *dynamodb.QueryInput {
 	return &r
 }
 
-func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem func() interface{}) error {
+func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
 
-Execute:
-	out, err := dynamodb.Query(d.Build())
-	if err != nil {
-		return handleAwsErr(err)
-	}
+	c = make(chan interface{})
+	e = make(chan error)
 
-	for _, item := range out.Items {
-		r := nextItem()
-		err = dynamodbattribute.UnmarshalMap(item, r)
+	go func() {
+		defer close(c)
+		defer close(e)
 
-		if err != nil {
-			return handleAwsErr(err)
+		var count int64 = 0
+	Execute:
+		if d.Limit != nil && count >= *d.Limit {
+			return
 		}
-	}
-	if out.LastEvaluatedKey != nil {
-		d.ExclusiveStartKey = out.LastEvaluatedKey
-		goto Execute
-	}
-	return nil
+		out, err := dynamodb.Query(d.Build())
+		if err != nil {
+			e <- handleAwsErr(err)
+			return
+		}
+
+		for _, item := range out.Items {
+			err = dynamodbattribute.UnmarshalMap(item, &nextItem)
+
+			if err != nil {
+				e <- handleAwsErr(err)
+				return
+			} else {
+				count++
+				c <- nextItem
+			}
+		}
+
+		if out.LastEvaluatedKey != nil {
+			d.ExclusiveStartKey = out.LastEvaluatedKey
+			goto Execute
+		}
+		return
+	}()
+
+	return
 }
 
 /**********************************************************************************************/

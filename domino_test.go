@@ -6,9 +6,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	// "github.com/negator/gotask"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -68,20 +70,25 @@ func NewUserTable() UserTable {
 }
 
 func NewDB() DynamoDBIFace {
-	sess := session.New()
 	region := "us-west-2"
-	config := &aws.Config{
-		Credentials: credentials.NewStaticCredentials("123", "123", ""),
-		Region:      &region,
-	}
-	sess.Config = config.WithEndpoint(localDynamoHost).WithHTTPClient(http.DefaultClient)
+	creds := credentials.NewStaticCredentials("123", "123", "")
+	config := aws.
+		NewConfig().
+		WithRegion(region).
+		WithCredentials(creds).
+		WithEndpoint(localDynamoHost).
+		WithHTTPClient(http.DefaultClient)
+	sess := session.New(config)
 
 	return dynamodb.New(sess)
 }
 
 func TestGetItem(t *testing.T) {
+
 	table := NewUserTable()
+
 	db := NewDB()
+
 	err := table.CreateTable().ExecuteWith(db)
 	defer table.DeleteTable().ExecuteWith(db)
 
@@ -200,6 +207,7 @@ func TestPutItem(t *testing.T) {
 	assert.NotNil(t, user)
 
 }
+
 func TestExpressions(t *testing.T) {
 	table := NewUserTable()
 	db := NewDB()
@@ -207,9 +215,11 @@ func TestExpressions(t *testing.T) {
 	err := table.CreateTable().ExecuteWith(db)
 	defer table.DeleteTable().ExecuteWith(db)
 
+	assert.Nil(t, err)
+
 	expr := Or(
 		table.registrationDate.BeginsWith("t"),
-		table.lastNameField.Contains(strconv.Itoa(25)),
+		table.lastNameField.Contains("25"),
 		Not(table.registrationDate.Contains("t")),
 		And(
 			table.registrationDate.Size(lte, 25),
@@ -231,10 +241,26 @@ func TestExpressions(t *testing.T) {
 		SetScanForward(true).
 		SetFilterExpression(expr)
 
-	err = q.ExecuteWith(db, func() interface{} {
+	channel, errChan := q.ExecuteWith(db, func() interface{} {
 		u := User{}
 		return &u
 	})
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-channel:
+			case err = <-errChan:
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
+
 	assert.Nil(t, err)
 }
 
@@ -248,16 +274,15 @@ func TestDynamoQuery(t *testing.T) {
 
 	assert.Nil(t, err)
 
-	userMe := User{Email: "naveen@email.com", Password: "password"}
-	items := []interface{}{userMe}
-	for i := 0; i < 100; i++ {
-		e := fmt.Sprintf("email_%v@email.com", i)
-		items = append(items, User{Email: e, Password: "password"})
+	me := &User{Email: "naveen@email.com", Password: "password"}
+	items := []interface{}{me}
+	for i := 0; i < 1000; i++ {
+		e := "naveen@email.com"
+		items = append(items, &User{Email: e, Password: "password" + strconv.Itoa(i)})
 	}
 
 	ui := []*User{}
 	w := table.BatchWriteItem().PutItems(items...)
-	// fmt.Println(w.Build())
 
 	err = w.ExecuteWith(db, func() interface{} {
 		u := User{}
@@ -269,24 +294,33 @@ func TestDynamoQuery(t *testing.T) {
 
 	assert.Empty(t, ui)
 
-	p := table.passwordField.Equals("password")
+	limit := 100
+	p := table.passwordField.BeginsWith("password")
 	q := table.
 		Query(
 			table.emailField.Equals("naveen@email.com"),
 			&p,
 		).
 		SetLimit(100).
-		SetScanForward(true).
-		SetFilterExpression(And(table.passwordField.Exists()))
+		SetScanForward(true)
 
-	results := []*User{}
-	err = q.ExecuteWith(db, func() interface{} {
-		user := User{}
-		results = append(results, &user)
-		return &user
-	})
+	users := []User{}
+	channel, errChan := q.ExecuteWith(db, &User{})
+
+SELECT:
+	for {
+		select {
+		case u := <-channel:
+			if u != nil {
+				users = append(users, *u.(*User))
+			} else {
+				break SELECT
+			}
+		case err = <-errChan:
+			break SELECT
+		}
+	}
 
 	assert.Nil(t, err)
-
-	assert.Equal(t, []*User{&userMe}, results)
+	assert.Equal(t, limit, len(users))
 }

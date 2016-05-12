@@ -33,8 +33,12 @@ type UserTable struct {
 }
 
 type User struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email       string            `json:"email"`
+	Password    string            `json:"password"`
+	Visits      []int64           `json:"visits"`
+	LoginCount  int               `json:"loginCount"`
+	RegDate     int64             `json:"registrationDate"`
+	Preferences map[string]string `json:"preferences"`
 }
 
 func NewUserTable() MyTable {
