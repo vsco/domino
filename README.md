@@ -162,5 +162,29 @@ q = table.
 
 Streaming Results 
 
+```go
+	p := table.passwordField.BeginsWith("password")
+	q := table.
+		Query(
+			table.emailField.Equals("naveen@email.com"),
+			&p,
+		).
+		SetLimit(100).
+		SetScanForward(true)
 
+	users := []User{}
+	channel, errChan := q.ExecuteWith(db, &User{})
+
+	for {
+		select {
+		case u, ok := <-channel:
+			if ok {
+				fmt.Println(u)
+			}
+		case err = <-errChan:
+
+		}
+	}
+
+```
 
