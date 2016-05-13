@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+/*Expression represents a dynamo condition expression, i.e. And(if_empty(...), size(path) >0) */
 type Expression interface {
 	construct(uint) (string, map[string]interface{}, uint)
 }
@@ -70,12 +71,15 @@ func (e expressionGroup) construct(counter uint) (string, map[string]interface{}
 	return r, m, counter
 }
 
+/*Or represents a dynamo OR expression. All expressions are or'd together*/
 func Or(c ...Expression) expressionGroup {
 	return expressionGroup{
 		c,
 		"OR",
 	}
 }
+
+/*And represents a dynamo AND expression. All expressions are and'd together*/
 func And(c ...Expression) expressionGroup {
 	return expressionGroup{
 		c,
@@ -83,6 +87,7 @@ func And(c ...Expression) expressionGroup {
 	}
 }
 
+/*String stringifies expressions for easy debugging*/
 func (c expressionGroup) String() string {
 	s, _, _ := c.construct(0)
 	return s
@@ -103,6 +108,7 @@ func (c negation) String() string {
 	return s
 }
 
+/*Not represents the dynamo NOT operator*/
 func Not(c Expression) negation {
 	return negation{c}
 }
@@ -122,13 +128,14 @@ func (c condition) construct(counter uint) (string, map[string]interface{}, uint
 	}
 	s := c.exprF(a)
 	return s, m, counter
-
 }
+
 func (c condition) String() string {
 	s, _, _ := c.construct(0)
 	return s
 }
 
+/*In represents the dynamo 'in' operator*/
 func (p *dynamoField) In(elems ...interface{}) condition {
 	return condition{
 		exprF: func(placeholders []string) string {
@@ -139,6 +146,7 @@ func (p *dynamoField) In(elems ...interface{}) condition {
 
 }
 
+/*Exists represents the dynamo attribute_exists operator*/
 func (p *dynamoField) Exists() condition {
 	return condition{
 		exprF: func(placeholders []string) string {
@@ -147,6 +155,7 @@ func (p *dynamoField) Exists() condition {
 	}
 }
 
+/*NotExists represents the dynamo attribute_not_exists operator*/
 func (p *dynamoField) NotExists() condition {
 	return condition{
 		exprF: func(placeholders []string) string {
@@ -155,6 +164,7 @@ func (p *dynamoField) NotExists() condition {
 	}
 }
 
+/*Contains represents the dynamo contains operator*/
 func (p *dynamoField) Contains(a interface{}) condition {
 	return condition{
 		exprF: func(placeholders []string) string {
@@ -164,6 +174,7 @@ func (p *dynamoField) Contains(a interface{}) condition {
 	}
 }
 
+/*Contains represents the dynamo contains size*/
 func (p *dynamoField) Size(op string, a interface{}) condition {
 	return condition{
 		exprF: func(placeholders []string) string {
@@ -187,6 +198,7 @@ func (p *dynamoField) operation(op string, a interface{}) keyCondition {
 		},
 	}
 }
+
 func (p *dynamoField) Equals(a interface{}) keyCondition {
 	return p.operation(eq, a)
 }
@@ -231,12 +243,13 @@ func (p *dynamoField) Between(a interface{}, b interface{}) keyCondition {
 /*********************************************************************************/
 /******************************** Update Expressions *****************************/
 /*********************************************************************************/
-type UpdateExpression struct {
+type updateExpression struct {
 	op string
 	f  func(counter uint) (string, map[string]interface{}, uint)
 }
 
-func (field *dynamoField) SetField(a interface{}, onlyIfEmpty bool) *UpdateExpression {
+/*SetField sets a dynamo field. Set onlyIfEmpty to true if you want to prevent overwrites*/
+func (field *dynamoField) SetField(a interface{}, onlyIfEmpty bool) *updateExpression {
 	f := func(c uint) (string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(a, c)
 		r := ph
@@ -250,10 +263,11 @@ func (field *dynamoField) SetField(a interface{}, onlyIfEmpty bool) *UpdateExpre
 		c++
 		return s, m, c
 	}
-	return &UpdateExpression{op: "SET", f: f}
+	return &updateExpression{op: "SET", f: f}
 }
 
-func (field *Numeric) Add(amount float64) *UpdateExpression {
+/*Add adds an amount to dynamo numeric field*/
+func (field *Numeric) Add(amount float64) *updateExpression {
 	f := func(c uint) (string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(amount, c)
 		s := field.name + " " + ph
@@ -261,10 +275,11 @@ func (field *Numeric) Add(amount float64) *UpdateExpression {
 		c++
 		return s, m, c
 	}
-	return &UpdateExpression{op: "ADD", f: f}
+	return &updateExpression{op: "ADD", f: f}
 }
 
-func (field *dynamoCollectionField) Append(a interface{}) *UpdateExpression {
+/*Append appends an element to a list field*/
+func (field *dynamoCollectionField) Append(a interface{}) *updateExpression {
 	f := func(c uint) (string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(a, c)
 		s := fmt.Sprintf(field.name+" = list_append(%v,"+field.name+")", ph)
@@ -273,32 +288,36 @@ func (field *dynamoCollectionField) Append(a interface{}) *UpdateExpression {
 		c++
 		return s, m, c
 	}
-	return &UpdateExpression{op: "SET", f: f}
+	return &updateExpression{op: "SET", f: f}
 }
 
-func (field *Map) RemoveKey(s string) *UpdateExpression {
+/*RemoveKey removes an element from a map field*/
+func (field *Map) RemoveKey(s string) *updateExpression {
 	f := func(c uint) (string, map[string]interface{}, uint) {
 		c++
 		m := make(map[string]interface{})
 		return s, m, c
 	}
-	return &UpdateExpression{op: "REMOVE", f: f}
+	return &updateExpression{op: "REMOVE", f: f}
 }
 
-func (field *dynamoCollectionField) RemoveElemIndex(idx uint) *UpdateExpression {
+/*RemoveElemIndex removes an element from collection field index*/
+func (field *dynamoCollectionField) RemoveElemIndex(idx uint) *updateExpression {
 	f := func(c uint) (string, map[string]interface{}, uint) {
 		c++
 		s := fmt.Sprintf("%v[%v]", field.name, idx)
 		m := make(map[string]interface{})
 		return s, m, c
 	}
-	return &UpdateExpression{op: "REMOVE", f: f}
+	return &updateExpression{op: "REMOVE", f: f}
 }
 
-func (field *Numeric) Increment(by uint) *UpdateExpression {
+/*Increment a numeric counter field*/
+func (field *Numeric) Increment(by uint) *updateExpression {
 	return field.Add(float64(by))
 }
 
-func (field *Numeric) Decrement(by uint) *UpdateExpression {
+/*Decrement a numeric counter field*/
+func (field *Numeric) Decrement(by uint) *updateExpression {
 	return field.Add(-float64(by))
 }

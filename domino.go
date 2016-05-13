@@ -1,13 +1,13 @@
 package domino
 
 import (
-	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
 
+/*DynamoDBIFace is the interface to the underlying aws dyanmo db api*/
 type DynamoDBIFace interface {
 	CreateTable(input *dynamodb.CreateTableInput) (*dynamodb.CreateTableOutput, error)
 	DeleteTable(input *dynamodb.DeleteTableInput) (*dynamodb.DeleteTableOutput, error)
@@ -22,26 +22,26 @@ type DynamoDBIFace interface {
 }
 
 const (
-	S    = "S"
-	SS   = "SS"
-	N    = "N"
-	NS   = "NS"
-	B    = "B"
-	BS   = "BS"
-	BOOL = "Bool"
-	NULL = "Null"
-	L    = "List"
-	M    = "M"
+	dS    = "S"
+	dSS   = "SS"
+	dN    = "N"
+	dNS   = "NS"
+	dB    = "B"
+	dBS   = "BS"
+	dBOOL = "Bool"
+	dNULL = "Null"
+	dL    = "List"
+	dM    = "M"
 )
 
-/*A static table definition representing a dynamo table*/
+/*DynamoTable is a static table definition representing a dynamo table*/
 type DynamoTable struct {
 	Name         string
-	PartitionKey DynamoFieldIFace
-	RangeKey     DynamoFieldIFace //Optional param. If no range key set to EmptyDynamoField()
+	PartitionKey dynamoFieldIFace
+	RangeKey     dynamoFieldIFace //Optional param. If no range key set to EmptyDynamoField()
 }
 
-type DynamoFieldIFace interface {
+type dynamoFieldIFace interface {
 	Name() string
 	Type() string
 	IsEmpty() bool
@@ -71,148 +71,176 @@ func (d dynamoField) IsEmpty() bool {
 	return d.empty
 }
 
+/*Empty - An empty dynamo field*/
 type Empty struct {
 	dynamoField
 }
 
+/*Numeric - A numeric dynamo field*/
 type Numeric struct {
 	dynamoValueField
 }
+
+/*NumericSet - A numeric set dynamo field*/
 type NumericSet struct {
 	dynamoCollectionField
 }
+
+/*String - A string dynamo field*/
 type String struct {
 	dynamoValueField
 }
+
+/*StringSet - A string set dynamo field*/
 type StringSet struct {
 	dynamoCollectionField
 }
+
+/*Binary - A binary dynamo field*/
 type Binary struct {
 	dynamoValueField
 }
+
+/*BinarySet - A binary dynamo field*/
 type BinarySet struct {
 	dynamoCollectionField
 }
+
+/*Bool - A boolean dynamo field*/
 type Bool struct {
 	dynamoValueField
 }
 
+/*List - A list dynamo field*/
 type List struct {
 	dynamoCollectionField
 }
 
+/*Map - A map dynamo field*/
 type Map struct {
 	dynamoCollectionField
 }
 
+/*EmptyField ... A constructor for an empty dynamo field*/
 func EmptyField() Empty {
 	return Empty{
 		dynamoField{
 			empty: true,
-			_type: NULL,
+			_type: dNULL,
 		},
 	}
 }
 
+/*NumericField ... A constructor for a numeric dynamo field*/
 func NumericField(name string) Numeric {
 	return Numeric{
 		dynamoValueField{
 			dynamoField{
 				name:  name,
-				_type: N,
+				_type: dN,
 			},
 		},
 	}
 }
 
+/*NumericSetField ... A constructor for a numeric set dynamo field*/
 func NumericSetField(name string) NumericSet {
 	return NumericSet{
 		dynamoCollectionField{
 			dynamoField{
 				name:  name,
-				_type: NS,
+				_type: dNS,
 			},
 		},
 	}
 }
 
+/*StringField ... A constructor for a string dynamo field*/
 func StringField(name string) String {
 	return String{
 		dynamoValueField{
 			dynamoField{
 				name:  name,
-				_type: S,
+				_type: dS,
 			},
 		},
 	}
 }
 
+/*BinaryField ... A constructor for a binary dynamo field*/
 func BinaryField(name string) Binary {
 	return Binary{
 		dynamoValueField{
 			dynamoField{
 				name:  name,
-				_type: B,
+				_type: dB,
 			},
 		},
 	}
 }
+
+/*BinarySetField ... A constructor for a binary set dynamo field*/
 func BinarySetField(name string) BinarySet {
 	return BinarySet{
 		dynamoCollectionField{
 			dynamoField{
 				name:  name,
-				_type: BS,
+				_type: dBS,
 			},
 		},
 	}
 }
 
+/*StringSetField ... A constructor for a string set dynamo field*/
 func StringSetField(name string) StringSet {
 	return StringSet{
 		dynamoCollectionField{
 			dynamoField{
 				name:  name,
-				_type: SS,
+				_type: dSS,
 			},
 		},
 	}
 }
 
+/*ListField ... A constructor for a list dynamo field*/
 func ListField(name string) List {
 	return List{
 		dynamoCollectionField{
 			dynamoField{
 				name:  name,
-				_type: L,
+				_type: dL,
 			},
 		},
 	}
 }
 
+/*MapField ... A constructor for a map dynamo field*/
 func MapField(name string) Map {
 	return Map{
 		dynamoCollectionField{
 			dynamoField{
 				name:  name,
-				_type: L,
+				_type: dL,
 			},
 		},
 	}
 }
 
+/*LocalSecondaryIndex ... Represents a dynamo local secondary index*/
 type LocalSecondaryIndex struct {
 	Name    string
-	SortKey DynamoFieldIFace
+	SortKey dynamoFieldIFace
 }
 
+/*GlobalSecondaryIndex ... Represents a dynamo global secondary index*/
 type GlobalSecondaryIndex struct {
 	Name         string
-	PartitionKey DynamoFieldIFace
-	RangeKey     DynamoFieldIFace //Optional param. If no range key set to nil
+	PartitionKey dynamoFieldIFace
+	RangeKey     dynamoFieldIFace //Optional param. If no range key set to nil
 }
 
-/*Key values for use in creating queries*/
+/*KeyValue ... A Key Value struct for use in GetItem and BatchWriteItem queries*/
 type KeyValue struct {
 	PartitionKey interface{}
 	RangeKey     interface{}
@@ -223,7 +251,7 @@ type KeyValue struct {
 /***************************************************************************************/
 type get dynamodb.GetItemInput
 
-/*Primary constructor for creating a  get item query*/
+/*GetItem Primary constructor for creating a  get item query*/
 func (table DynamoTable) GetItem(key KeyValue) *get {
 	q := get(dynamodb.GetItemInput{})
 	q.TableName = &table.Name
@@ -234,20 +262,27 @@ func (table DynamoTable) GetItem(key KeyValue) *get {
 	return &q
 }
 
+/*SetConsistentRead ... */
 func (d *get) SetConsistentRead(c bool) *get {
 	(*d).ConsistentRead = &c
 	return d
 }
 
-/*Must call this method to create a GetItemInput object for use in aws dynamodb api*/
-func (d *get) Build() *dynamodb.GetItemInput {
+func (d *get) build() *dynamodb.GetItemInput {
 	r := dynamodb.GetItemInput(*d)
 	return &r
 }
 
-/*Execute a dynamo getitem call, hydrating the passed in struct on return or returning error*/
+/**
+ ** ExecuteWith ... Execute a dynamo getitem call with a passed in dynamodb instance
+ ** dynamo - The underlying dynamodb api
+ ** item - The item pointer to be hyderated. I.e. if the table holds User object, item should be a pointer to a uninitialized
+ **        User{} struct
+ **
+ ** Returns a tuple of the hydrated item struct, or an error
+ */
 func (d *get) ExecuteWith(dynamo DynamoDBIFace, item interface{}) (r interface{}, err error) {
-	out, err := dynamo.GetItem(d.Build())
+	out, err := dynamo.GetItem(d.build())
 	if err != nil {
 		err = handleAwsErr(err)
 		return
@@ -273,6 +308,7 @@ type batchGet struct {
 	delayedFunctions []func() error
 }
 
+/*BatchGetItem represents dynamo batch get item call*/
 func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 	/*Delay the attribute value construction, until build time*/
 	input := &dynamodb.BatchGetItemInput{}
@@ -314,7 +350,7 @@ func (d *batchGet) SetConsistentRead(c bool) *batchGet {
 	return d
 }
 
-func (d *batchGet) Build() (input *dynamodb.BatchGetItemInput, err error) {
+func (d *batchGet) build() (input *dynamodb.BatchGetItemInput, err error) {
 	for _, function := range d.delayedFunctions {
 		err = function()
 		if err != nil {
@@ -326,10 +362,17 @@ func (d *batchGet) Build() (input *dynamodb.BatchGetItemInput, err error) {
 	return
 }
 
+/**
+ ** ExecuteWith ... Execute a dynamo BatchGetItem call with a passed in dynamodb instance and next item pointer
+ ** dynamo - The underlying dynamodb api
+ ** nextItem - The item pointer function, which is called on each new object returned from dynamodb. The function should
+ ** 		   store each item in an array before returning.
+ **
+ */
 func (d *batchGet) ExecuteWith(dynamo DynamoDBIFace, nextItem func() interface{}) error {
 
 	retry := 0
-	input, err := d.Build()
+	input, err := d.build()
 Execute:
 
 	if err != nil {
@@ -362,6 +405,7 @@ Execute:
 /***************************************************************************************/
 type put dynamodb.PutItemInput
 
+/*PutItem represents dynamo put item call*/
 func (table DynamoTable) PutItem(i interface{}) *put {
 
 	q := put(dynamodb.PutItemInput{})
@@ -379,13 +423,18 @@ func (d *put) SetConditionExpression(c Expression) *put {
 	return d
 }
 
-func (d *put) Build() *dynamodb.PutItemInput {
+func (d *put) build() *dynamodb.PutItemInput {
 	r := dynamodb.PutItemInput(*d)
 	return &r
 }
 
+/**
+ ** ExecuteWith ... Execute a dynamo PutItem call with a passed in dynamodb instance
+ ** dynamo - The underlying dynamodb api
+ **
+ */
 func (d *put) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.PutItem(d.Build())
+	_, err := dynamo.PutItem(d.build())
 	if err != nil {
 		return handleAwsErr(err)
 	}
@@ -401,6 +450,7 @@ type batchPut struct {
 	delayedFunctions []func() error
 }
 
+/*BatchWriteItem represents dynamo batch write item call*/
 func (table DynamoTable) BatchWriteItem() *batchPut {
 	r := batchPut{
 		batches: []dynamodb.BatchWriteItemInput{},
@@ -471,7 +521,7 @@ func (d *batchPut) DeleteItems(keys ...KeyValue) *batchPut {
 	return d
 }
 
-func (d *batchPut) Build() (input []dynamodb.BatchWriteItemInput, err error) {
+func (d *batchPut) build() (input []dynamodb.BatchWriteItemInput, err error) {
 	for _, function := range d.delayedFunctions {
 		if err = function(); err != nil {
 			return
@@ -481,9 +531,16 @@ func (d *batchPut) Build() (input []dynamodb.BatchWriteItemInput, err error) {
 	return
 }
 
+/**
+ ** ExecuteWith ... Execute a dynamo BatchWriteItem call with a passed in dynamodb instance and unprocessed item pointer function
+ ** dynamo - The underlying dynamodb api
+ ** unprocessedItem - The item pointer function, which is called on each object returned from dynamodb that could not be processed.
+ ** 				The function should store each item pointer in an array before returning.
+ **
+ */
 func (d *batchPut) ExecuteWith(dynamo DynamoDBIFace, unprocessedItem func() interface{}) error {
 
-	batches, err := d.Build()
+	batches, err := d.build()
 	if err != nil {
 		return err
 	}
@@ -511,6 +568,7 @@ func (d *batchPut) ExecuteWith(dynamo DynamoDBIFace, unprocessedItem func() inte
 /***************************************************************************************/
 type deleteItem dynamodb.DeleteItemInput
 
+/*DeleteItem represents dynamo delete item call*/
 func (table DynamoTable) DeleteItem(key KeyValue) *deleteItem {
 	q := deleteItem(dynamodb.DeleteItemInput{})
 	q.TableName = &table.Name
@@ -525,13 +583,18 @@ func (d *deleteItem) SetConditionExpression(c Expression) *deleteItem {
 	return d
 }
 
-func (d *deleteItem) Build() *dynamodb.DeleteItemInput {
+func (d *deleteItem) build() *dynamodb.DeleteItemInput {
 	r := dynamodb.DeleteItemInput(*d)
 	return &r
 }
 
+/**
+ ** ExecuteWith ... Execute a dynamo DeleteItem call with a passed in dynamodb instance
+ ** dynamo - The underlying dynamodb api
+ **
+ */
 func (d *deleteItem) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.DeleteItem(d.Build())
+	_, err := dynamo.DeleteItem(d.build())
 	if err != nil {
 		return handleAwsErr(err)
 	}
@@ -546,6 +609,7 @@ type update struct {
 	delayedFunctions []func() error
 }
 
+/*UpdateItem represents dynamo batch get item call*/
 func (table DynamoTable) UpdateItem(key KeyValue) *update {
 	q := update{input: dynamodb.UpdateItemInput{TableName: &table.Name}}
 	appendKeyAttribute(&q.input.Key, table, key)
@@ -572,7 +636,7 @@ func (d *update) SetConditionExpression(c Expression) *update {
 	return d
 }
 
-func (d *update) SetUpdateExpression(exprs ...*UpdateExpression) *update {
+func (d *update) SetUpdateExpression(exprs ...*updateExpression) *update {
 	m := make(map[string]interface{})
 	ms := make(map[string]string)
 
@@ -609,13 +673,18 @@ func (d *update) SetUpdateExpression(exprs ...*UpdateExpression) *update {
 	return d
 }
 
-func (d *update) Build() *dynamodb.UpdateItemInput {
+func (d *update) build() *dynamodb.UpdateItemInput {
 	r := dynamodb.UpdateItemInput((*d).input)
 	return &r
 }
 
+/**
+ ** ExecuteWith ... Execute a dynamo BatchGetItem call with a passed in dynamodb instance
+ ** dynamo - The underlying dynamodb api
+ **
+ */
 func (d *update) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.UpdateItem(d.Build())
+	_, err := dynamo.UpdateItem(d.build())
 	if err != nil {
 		return handleAwsErr(err)
 	}
@@ -627,6 +696,7 @@ func (d *update) ExecuteWith(dynamo DynamoDBIFace) error {
 /***************************************************************************************/
 type query dynamodb.QueryInput
 
+/*Query represents dynamo batch get item call*/
 func (table DynamoTable) Query(partitionKeyCondition keyCondition, rangeKeyCondition *keyCondition) *query {
 	q := query(dynamodb.QueryInput{})
 	var e Expression
@@ -691,11 +761,19 @@ func (d *query) SetGlobalIndex(idx GlobalSecondaryIndex) *query {
 	return d
 }
 
-func (d *query) Build() *dynamodb.QueryInput {
+func (d *query) build() *dynamodb.QueryInput {
 	r := dynamodb.QueryInput(*d)
 	return &r
 }
 
+/**
+ ** ExecuteWith ... Execute a dynamo BatchGetItem call with a passed in dynamodb instance and next item pointer
+ ** dynamo - The underlying dynamodb api
+ ** nextItem - The item pointer function, which is called on each new object returned from dynamodb. The function SHOULD NOT
+ ** 		   store each item. It should simply return an empty struct pointer. Each of which is hydrated and pused on the
+ ** 			returned channel.
+ **
+ */
 func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
 
 	c = make(chan interface{})
@@ -705,12 +783,12 @@ func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c cha
 		defer close(c)
 		defer close(e)
 
-		var count int64 = 0
+		var count int64
 	Execute:
 		if d.Limit != nil && count >= *d.Limit {
 			return
 		}
-		out, err := dynamodb.Query(d.Build())
+		out, err := dynamodb.Query(d.build())
 		if err != nil {
 			e <- handleAwsErr(err)
 			return
@@ -722,10 +800,9 @@ func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c cha
 			if err != nil {
 				e <- handleAwsErr(err)
 				return
-			} else {
-				count++
-				c <- nextItem
 			}
+			count++
+			c <- nextItem
 		}
 
 		if out.LastEvaluatedKey != nil {
@@ -743,6 +820,7 @@ func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c cha
 /***************************************************************************************/
 type scan dynamodb.ScanInput
 
+/*Scan represents dynamo scan item call*/
 func (table DynamoTable) Scan() *scan {
 	q := scan(dynamodb.ScanInput{})
 	q.TableName = &table.Name
@@ -789,11 +867,19 @@ func (d *scan) SetGlobalIndex(idx GlobalSecondaryIndex) *scan {
 	return d
 }
 
-func (d *scan) Build() *dynamodb.ScanInput {
+func (d *scan) build() *dynamodb.ScanInput {
 	r := dynamodb.ScanInput(*d)
 	return &r
 }
 
+/**
+ ** ExecuteWith ... Execute a dynamo Scan call with a passed in dynamodb instance and next item pointer
+ ** dynamo - The underlying dynamodb api
+ ** nextItem - The item pointer function, which is called on each new object returned from dynamodb. The function SHOULD NOT
+ ** 		   store each item. It should simply return an empty struct pointer. Each of which is hydrated and pushed on
+ ** 		   the returned channel.
+ **
+ */
 func (d *scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
 
 	c = make(chan interface{})
@@ -803,12 +889,12 @@ func (d *scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 		defer close(c)
 		defer close(e)
 
-		var count int64 = 0
+		var count int64
 	Execute:
 		if d.Limit != nil && count >= *d.Limit {
 			return
 		}
-		out, err := dynamodb.Scan(d.Build())
+		out, err := dynamodb.Scan(d.build())
 		if err != nil {
 			e <- handleAwsErr(err)
 			return
@@ -820,10 +906,9 @@ func (d *scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 			if err != nil {
 				e <- handleAwsErr(err)
 				return
-			} else {
-				count++
-				c <- nextItem
 			}
+			count++
+			c <- nextItem
 		}
 
 		if out.LastEvaluatedKey != nil {
@@ -883,13 +968,13 @@ func (table DynamoTable) CreateTable() *createTable {
 	return &c
 }
 
-func (d *createTable) Build() *dynamodb.CreateTableInput {
+func (d *createTable) build() *dynamodb.CreateTableInput {
 	r := dynamodb.CreateTableInput(*d)
 	return &r
 }
 
 func (d *createTable) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.CreateTable(d.Build())
+	_, err := dynamo.CreateTable(d.build())
 	return handleAwsErr(err)
 }
 
@@ -903,13 +988,13 @@ func (table DynamoTable) DeleteTable() *deleteTable {
 	return &r
 }
 
-func (d *deleteTable) Build() *dynamodb.DeleteTableInput {
+func (d *deleteTable) build() *dynamodb.DeleteTableInput {
 	r := dynamodb.DeleteTableInput(*d)
 	return &r
 }
 
 func (d *deleteTable) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.DeleteTable(d.Build())
+	_, err := dynamo.DeleteTable(d.build())
 	return handleAwsErr(err)
 }
 
@@ -952,7 +1037,7 @@ func appendAttribute(m *map[string]*dynamodb.AttributeValue, key string, value i
 func handleAwsErr(err error) error {
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
-			errors.New(fmt.Sprintf("Error: %v, %v", awsErr.Code(), awsErr.Message()))
+			fmt.Errorf("Error: %v, %v", awsErr.Code(), awsErr.Message())
 		} else {
 			err.Error()
 		}

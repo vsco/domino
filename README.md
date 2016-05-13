@@ -128,7 +128,7 @@ q = table.
 	unprocessedUsers := []*User{} //Set of unprocessed items (if any), returned by dynamo
 	q.ExecuteWith(db, func() interface{} {
 		user := User{}
-		users = append(users, &user)
+		unprocessedUsers = append(users, &user)
 		return &user
 	})
 ```
