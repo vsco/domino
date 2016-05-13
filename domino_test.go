@@ -95,10 +95,22 @@ func TestGetItem(t *testing.T) {
 	err = table.PutItem(item).ExecuteWith(db)
 	assert.Nil(t, err)
 
-	user := User{}
-	err = table.GetItem(KeyValue{"naveen@email.com", "password"}).ExecuteWith(db, &user)
+	r, err := table.GetItem(KeyValue{"naveen@email.com", "password"}).ExecuteWith(db, &User{})
 	assert.Nil(t, err)
-	assert.Equal(t, User{Email: "naveen@email.com", Password: "password"}, user)
+	assert.Equal(t, User{Email: "naveen@email.com", Password: "password"}, *r.(*User))
+}
+func TestGetItemEmpty(t *testing.T) {
+
+	table := NewUserTable()
+
+	db := NewDB()
+
+	err := table.CreateTable().ExecuteWith(db)
+	defer table.DeleteTable().ExecuteWith(db)
+
+	user, err := table.GetItem(KeyValue{"naveen@email.com", "password"}).ExecuteWith(db, &User{})
+	assert.Nil(t, err)
+	assert.Nil(t, user)
 }
 
 func TestBatchPutItem(t *testing.T) {
@@ -167,8 +179,8 @@ func TestUpdateItem(t *testing.T) {
 	err = u.ExecuteWith(db)
 	assert.Nil(t, err)
 	g := table.GetItem(KeyValue{"naveen@email.com", "password"})
-	var user User
-	err = g.ExecuteWith(db, &user)
+
+	user, err := g.ExecuteWith(db, &User{})
 
 	assert.NotNil(t, user)
 
@@ -200,8 +212,8 @@ func TestPutItem(t *testing.T) {
 	assert.Nil(t, err)
 
 	g := table.GetItem(KeyValue{"joe@email.com", "password"})
-	var user User
-	err = g.ExecuteWith(db, &user)
+
+	user, err := g.ExecuteWith(db, &User{})
 
 	assert.NotNil(t, user)
 

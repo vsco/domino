@@ -245,16 +245,22 @@ func (d *get) Build() *dynamodb.GetItemInput {
 }
 
 /*Execute a dynamo getitem call, hydrating the passed in struct on return or returning error*/
-func (d *get) ExecuteWith(dynamo DynamoDBIFace, item interface{}) error {
+func (d *get) ExecuteWith(dynamo DynamoDBIFace, item interface{}) (r interface{}, err error) {
 	out, err := dynamo.GetItem(d.Build())
 	if err != nil {
-		return handleAwsErr(err)
+		err = handleAwsErr(err)
+		return
 	}
-	err = dynamodbattribute.UnmarshalMap(out.Item, item)
-	if err != nil {
-		return handleAwsErr(err)
+	if out.Item != nil && len(out.Item) > 0 {
+		r = item
+		err = dynamodbattribute.UnmarshalMap(out.Item, r)
+		if err != nil {
+			err = handleAwsErr(err)
+			return
+		}
 	}
-	return nil
+
+	return
 }
 
 /***************************************************************************************/
