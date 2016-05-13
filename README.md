@@ -17,19 +17,19 @@ dynamo := dynamodb.New(sess)
 //Define your table schema statically
 type UserTable struct {
 	DynamoTable
-	emailField    dynamoFieldString
-	passwordField dynamoFieldString
+	emailField    domino.String
+	passwordField domino.String
 
-	registrationDate dynamoFieldNumeric
-	loginCount       dynamoFieldNumeric
-	lastLoginDate    dynamoFieldNumeric
-	vists            dynamoFieldNumericSet
+	registrationDate domino.Numeric
+	loginCount       domino.Numeric
+	lastLoginDate    domino.Numeric
+	vists            domino.NumericSet
 	preferences      dynamoFieldMap
-	nameField        dynamoFieldString
-	lastNameField    dynamoFieldString
+	nameField        domino.String
+	lastNameField    domino.String
 
-	registrationDateIndex LocalSecondaryIndex
-	nameGlobalIndex       GlobalSecondaryIndex
+	registrationDateIndex domino.LocalSecondaryIndex
+	nameGlobalIndex       domino.GlobalSecondaryIndex
 }
 
 type User struct {
@@ -42,11 +42,11 @@ type User struct {
 }
 
 func NewUserTable() MyTable {
-	pk := DynamoFieldString("email")
-	rk := DynamoFieldString("password")
-	firstName := DynamoFieldString("firstName")
-	lastName := DynamoFieldString("lastName")
-	reg := DynamoFieldNumeric("registrationDate")
+	pk := domino.StringField("email")
+	rk := domino.StringField("password")
+	firstName := domino.StringField("firstName")
+	lastName := domino.StringField("lastName")
+	reg := domino.NumericField("registrationDate")
 	return MyTable{
 		DynamoTable{
 			Name:         "mytable",
@@ -56,14 +56,14 @@ func NewUserTable() MyTable {
 		pk,  //email
 		rk,  //password
 		reg, //registration
-		DynamoFieldNumeric("loginCount"),
-		DynamoFieldNumeric("lastLoginDate"),
-		DynamoFieldNumericSet("visits"),
-		DynamoFieldMap("preferences"),
+		domino.NumericField("loginCount"),
+		domino.NumericField("lastLoginDate"),
+		domino.NumericFieldSet("visits"),
+		domino.MapField("preferences"),
 		firstName,
 		lastName,
-		LocalSecondaryIndex{"registrationDate-index", reg},
-		GlobalSecondaryIndex{"name-index", firstName, lastName},
+		domino.LocalSecondaryIndex{"registrationDate-index", reg},
+		domino.GlobalSecondaryIndex{"name-index", firstName, lastName},
 	}
 }
 
@@ -91,7 +91,8 @@ q = table.
 	GetItem(KeyValue{"naveen@email.com", "password"}).
 	SetConsistentRead(true).
 	Build()  //This is type GetItemInput
-r, err = dynamo.GetItem(q)
+r, err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo)
+
 ```
 
 
