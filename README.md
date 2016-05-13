@@ -76,7 +76,7 @@ Use a fluent style DSL to interact with your table. All DynamoDB data operations
 
 Put Item
 ```go
-p := table.
+q := table.
 	PutItem(
 		User{"naveen@email.com","password"},
 	).
@@ -88,7 +88,7 @@ err := dynamo.PutItem(q).ExecuteWith(dynamo)
 
 GetItem
 ```go
-q = table.
+q := table.
 	GetItem(
 		KeyValue{"naveen@email.com", "password"}, 
 	).
@@ -118,7 +118,7 @@ err = dynamo.UpdateItem(q).ExecuteWith(dynamo)
 
 Batch Get Item
 ```go
-q = table.
+q := table.
 	BatchGetItem(
 		KeyValue{"naveen@email.com", "password"},
 		KeyValue{"joe@email.com", "password"},
