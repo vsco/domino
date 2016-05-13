@@ -82,7 +82,7 @@ p := table.
 		table.PartitionKey.NotExists()
 	).
 	Build()
-r, err := dynamo.PutItem(q)
+err := dynamo.PutItem(q).ExecuteWith(dynamo)
 ```
 
 GetItem
@@ -90,8 +90,10 @@ GetItem
 q = table.
 	GetItem(KeyValue{"naveen@email.com", "password"}).
 	SetConsistentRead(true).
-	Build()  //This is type GetItemInput
-r, err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo)
+	Build()  
+r, err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo, &User{}) //Pass in domain object template object
+
+user := r.(*User) //Must cast back to domain object pointer
 
 ```
 
@@ -107,23 +109,7 @@ q := table.
 		table.vists.RemoveElemIndex(0),
 		table.preferences.RemoveKey("update_email"),
 	).Build()
-r, err = dynamo.UpdateItem(q)	
-```
-
-Query
-```go
-p = table.lastNameField.Equals("Gattu")
-q = table.
-	Query(
-		table.nameField.Equals("naveen"),
-		&p,
-	).
-	SetLimit(100).
-	SetScanForward(true).
-	SetLocalIndex(table.registrationDateIndex).
-	Build() 
-
-r, err = dynamo.Query(q)	
+err = dynamo.UpdateItem(q).ExecuteWith(dynamo)
 ```
 
 Batch Get Item
@@ -135,7 +121,12 @@ q = table.
 	).
 	SetConsistentRead(true).
 	Build()
-r, err = dynamo.BatchGetItem(q)	
+	unprocessedUsers := []*User{}
+	q.ExecuteWith(db, func() interface{} {
+		user := User{}
+		users = append(users, &user)
+		return &user
+	})
 ```
 
 
