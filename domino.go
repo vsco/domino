@@ -1,6 +1,7 @@
 package domino
 
 import (
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -266,52 +267,76 @@ func (d *get) ExecuteWith(dynamo DynamoDBIFace, item interface{}) (r interface{}
 /***************************************************************************************/
 /************************************** BatchGetItem ***********************************/
 /***************************************************************************************/
-type batchGet dynamodb.BatchGetItemInput
+type batchGet struct {
+	input *dynamodb.BatchGetItemInput
+	/*A set of mutational operations that might error out, i.e. not pure, and therefore not conducive to a fluent dsl*/
+	delayedFunctions []func() error
+}
 
 func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
-	k := make(map[string]*dynamodb.KeysAndAttributes)
-	keysAndAttribs := dynamodb.KeysAndAttributes{}
-	k[table.Name] = &keysAndAttribs
+	/*Delay the attribute value construction, until build time*/
+	input := &dynamodb.BatchGetItemInput{}
+	delayed := func() error {
+		k := make(map[string]*dynamodb.KeysAndAttributes)
+		keysAndAttribs := dynamodb.KeysAndAttributes{}
+		k[table.Name] = &keysAndAttribs
+		for _, kv := range items {
+			m := map[string]interface{}{
+				table.PartitionKey.Name(): kv.PartitionKey,
+			}
+			if !table.RangeKey.IsEmpty() {
+				m[table.RangeKey.Name()] = kv.RangeKey
+			}
 
-	for _, kv := range items {
-		m := map[string]interface{}{
-			table.PartitionKey.Name(): kv.PartitionKey,
-		}
-		if !table.RangeKey.IsEmpty() {
-			m[table.RangeKey.Name()] = kv.RangeKey
-		}
+			attributes, err := dynamodbattribute.MarshalMap(m)
 
-		attributes, err := dynamodbattribute.MarshalMap(m)
-
-		if err != nil {
-			panic(err)
+			if err != nil {
+				return err
+			}
+			keysAndAttribs.Keys = append(keysAndAttribs.Keys, attributes)
 		}
-		keysAndAttribs.Keys = append(keysAndAttribs.Keys, attributes)
+		(*input).RequestItems = k
+		return nil
 	}
 
-	q := batchGet(dynamodb.BatchGetItemInput{})
-	q.RequestItems = k
+	q := batchGet{
+		input:            input,
+		delayedFunctions: []func() error{delayed},
+	}
+
 	return &q
 }
 
 func (d *batchGet) SetConsistentRead(c bool) *batchGet {
-	for _, ka := range d.RequestItems {
+	for _, ka := range d.input.RequestItems {
 		(*ka).ConsistentRead = &c
 	}
 	return d
 }
 
-func (d *batchGet) Build() *dynamodb.BatchGetItemInput {
-	r := dynamodb.BatchGetItemInput(*d)
-	return &r
+func (d *batchGet) Build() (input *dynamodb.BatchGetItemInput, err error) {
+	for _, function := range d.delayedFunctions {
+		err = function()
+		if err != nil {
+			return
+		}
+	}
+	input = (*dynamodb.BatchGetItemInput)((*d).input)
+
+	return
 }
 
 func (d *batchGet) ExecuteWith(dynamo DynamoDBIFace, nextItem func() interface{}) error {
 
 	retry := 0
+	input, err := d.Build()
 Execute:
 
-	out, err := dynamo.BatchGetItem(d.Build())
+	if err != nil {
+		return err
+	}
+	out, err := dynamo.BatchGetItem(input)
+
 	if err != nil {
 		return handleAwsErr(err)
 	}
@@ -324,7 +349,7 @@ Execute:
 		}
 	}
 	if out.UnprocessedKeys != nil && len(out.UnprocessedKeys) > 0 {
-		d.RequestItems = out.UnprocessedKeys
+		input.RequestItems = out.UnprocessedKeys
 		retry++
 		goto Execute
 	}
@@ -371,57 +396,63 @@ func (d *put) ExecuteWith(dynamo DynamoDBIFace) error {
 /************************************** BatchPutItem *********************************/
 /***************************************************************************************/
 type batchPut struct {
-	batches []dynamodb.BatchWriteItemInput
-	table   DynamoTable
+	batches          []dynamodb.BatchWriteItemInput
+	table            DynamoTable
+	delayedFunctions []func() error
 }
 
 func (table DynamoTable) BatchWriteItem() *batchPut {
 	r := batchPut{
-		[]dynamodb.BatchWriteItemInput{},
-		table,
+		batches: []dynamodb.BatchWriteItemInput{},
+		table:   table,
 	}
 	return &r
 }
 
 func (d *batchPut) writeItems(putOnly bool, items ...interface{}) *batchPut {
-	batches := []dynamodb.BatchWriteItemInput{}
-	batchCount := len(items)/25 + 1
-
-	for i := 1; i <= batchCount; i++ {
-		batch := dynamodb.BatchWriteItemInput{
-			RequestItems: make(map[string][]*dynamodb.WriteRequest),
-		}
-		puts := []*dynamodb.WriteRequest{}
-
-		for len(items) > 0 && len(puts) < 25 {
-			item := items[0]
-			items = items[1:]
-			dynamoItem, err := dynamodbattribute.MarshalMap(item)
-			if err != nil {
-				panic(err)
+	delayed := func() error {
+		batches := []dynamodb.BatchWriteItemInput{}
+		batchCount := len(items)/25 + 1
+		for i := 1; i <= batchCount; i++ {
+			batch := dynamodb.BatchWriteItemInput{
+				RequestItems: make(map[string][]*dynamodb.WriteRequest),
 			}
-			var write *dynamodb.WriteRequest
-			if putOnly {
-				write = &dynamodb.WriteRequest{
-					PutRequest: &dynamodb.PutRequest{
-						Item: dynamoItem,
-					},
+			puts := []*dynamodb.WriteRequest{}
+
+			for len(items) > 0 && len(puts) < 25 {
+				item := items[0]
+				items = items[1:]
+				dynamoItem, err := dynamodbattribute.MarshalMap(item)
+				if err != nil {
+					return err
 				}
-			} else {
-				write = &dynamodb.WriteRequest{
-					DeleteRequest: &dynamodb.DeleteRequest{
-						Key: dynamoItem,
-					},
+				var write *dynamodb.WriteRequest
+				if putOnly {
+					write = &dynamodb.WriteRequest{
+						PutRequest: &dynamodb.PutRequest{
+							Item: dynamoItem,
+						},
+					}
+				} else {
+					write = &dynamodb.WriteRequest{
+						DeleteRequest: &dynamodb.DeleteRequest{
+							Key: dynamoItem,
+						},
+					}
 				}
+
+				puts = append(puts, write)
 			}
 
-			puts = append(puts, write)
-		}
+			batch.RequestItems[d.table.Name] = puts
+			batches = append(batches, batch)
 
-		batch.RequestItems[d.table.Name] = puts
-		batches = append(batches, batch)
+		}
+		d.batches = append(d.batches, batches...)
+		return nil
 	}
-	d.batches = append(d.batches, batches...)
+	d.delayedFunctions = append(d.delayedFunctions, delayed)
+
 	return d
 }
 
@@ -440,13 +471,23 @@ func (d *batchPut) DeleteItems(keys ...KeyValue) *batchPut {
 	return d
 }
 
-func (d *batchPut) Build() []dynamodb.BatchWriteItemInput {
-	return d.batches
+func (d *batchPut) Build() (input []dynamodb.BatchWriteItemInput, err error) {
+	for _, function := range d.delayedFunctions {
+		if err = function(); err != nil {
+			return
+		}
+	}
+	input = d.batches
+	return
 }
 
 func (d *batchPut) ExecuteWith(dynamo DynamoDBIFace, unprocessedItem func() interface{}) error {
 
-	for _, batch := range d.Build() {
+	batches, err := d.Build()
+	if err != nil {
+		return err
+	}
+	for _, batch := range batches {
 		out, err := dynamo.BatchWriteItem(&batch)
 		if err != nil {
 			return handleAwsErr(err)
@@ -500,31 +541,34 @@ func (d *deleteItem) ExecuteWith(dynamo DynamoDBIFace) error {
 /***************************************************************************************/
 /*********************************** UpdateItem ****************************************/
 /***************************************************************************************/
-type update dynamodb.UpdateItemInput
+type update struct {
+	input            dynamodb.UpdateItemInput
+	delayedFunctions []func() error
+}
 
 func (table DynamoTable) UpdateItem(key KeyValue) *update {
-
-	q := update(dynamodb.UpdateItemInput{})
-	q.TableName = &table.Name
-
-	appendKeyAttribute(&q.Key, table, key)
-
+	q := update{input: dynamodb.UpdateItemInput{TableName: &table.Name}}
+	appendKeyAttribute(&q.input.Key, table, key)
 	return &q
 }
 
 func (d *update) SetConditionExpression(c Expression) *update {
-	s, m, _ := c.construct(1)
-	d.ConditionExpression = &s
-	ea, err := dynamodbattribute.MarshalMap(m)
-	if err != nil {
-		panic(err)
+	delayed := func() error {
+		s, m, _ := c.construct(1)
+		d.input.ConditionExpression = &s
+		ea, err := dynamodbattribute.MarshalMap(m)
+		if err != nil {
+			return err
+		}
+		if d.input.ExpressionAttributeValues == nil {
+			d.input.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
+		}
+		for k, v := range ea {
+			d.input.ExpressionAttributeValues[k] = v
+		}
+		return nil
 	}
-	if d.ExpressionAttributeValues == nil {
-		d.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
-	}
-	for k, v := range ea {
-		d.ExpressionAttributeValues[k] = v
-	}
+	d.delayedFunctions = append(d.delayedFunctions, delayed)
 	return d
 }
 
@@ -551,22 +595,22 @@ func (d *update) SetUpdateExpression(exprs ...*UpdateExpression) *update {
 		s += k + " " + v + " "
 	}
 
-	d.UpdateExpression = &s
+	d.input.UpdateExpression = &s
 	ea, err := dynamodbattribute.MarshalMap(m)
 	if err != nil {
 		panic(err)
 	}
-	if d.ExpressionAttributeValues == nil {
-		d.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
+	if d.input.ExpressionAttributeValues == nil {
+		d.input.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
 	}
 	for k, v := range ea {
-		d.ExpressionAttributeValues[k] = v
+		d.input.ExpressionAttributeValues[k] = v
 	}
 	return d
 }
 
 func (d *update) Build() *dynamodb.UpdateItemInput {
-	r := dynamodb.UpdateItemInput(*d)
+	r := dynamodb.UpdateItemInput((*d).input)
 	return &r
 }
 
@@ -908,18 +952,9 @@ func appendAttribute(m *map[string]*dynamodb.AttributeValue, key string, value i
 func handleAwsErr(err error) error {
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
-			// Get error details
-			fmt.Println("Error:", awsErr.Code(), awsErr.Message())
-
-			// Prints out full error message, including original error if there was one.
-			fmt.Println("Error:", awsErr.Error())
-
-			// Get original error
-			if origErr := awsErr.OrigErr(); origErr != nil {
-				// operate on original error.
-			}
+			errors.New(fmt.Sprintf("Error: %v, %v", awsErr.Code(), awsErr.Message()))
 		} else {
-			fmt.Println(err.Error())
+			err.Error()
 		}
 	}
 	return err

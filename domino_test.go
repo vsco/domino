@@ -1,7 +1,6 @@
 package domino
 
 import (
-	// "fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -335,6 +334,45 @@ SELECT:
 	assert.Nil(t, err)
 	assert.Equal(t, limit, len(users))
 }
+
+func TestDynamoQueryError(t *testing.T) {
+	table := NewUserTable()
+	db := NewDB()
+
+	err := table.CreateTable().ExecuteWith(db)
+	defer table.DeleteTable().ExecuteWith(db)
+
+	assert.Nil(t, err)
+
+	me := &User{Email: "naveen@email.com", Password: "password"}
+	items := []interface{}{me}
+	for i := 0; i < 1000; i++ {
+		e := "naveen@email.com"
+		items = append(items, &User{Email: e, Password: "password" + strconv.Itoa(i)})
+	}
+
+	_ = table.BatchWriteItem().PutItems(items...).ExecuteWith(db, func() interface{} { return &User{} })
+
+	channel, errChan := table.
+		Query(
+			table.registrationDate.Equals("naveen@email.com"),
+			nil,
+		).
+		SetScanForward(true).
+		ExecuteWith(db, &User{})
+
+CONTINUE:
+
+	select {
+	case err = <-errChan:
+	case _ = <-channel:
+		goto CONTINUE
+	}
+
+	assert.NotNil(t, err)
+
+}
+
 func TestDynamoScan(t *testing.T) {
 
 	table := NewUserTable()
