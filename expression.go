@@ -253,7 +253,7 @@ func (field *dynamoField) SetField(a interface{}, onlyIfEmpty bool) *UpdateExpre
 	return &UpdateExpression{op: "SET", f: f}
 }
 
-func (field *dynamoFieldNumeric) Add(amount float64) *UpdateExpression {
+func (field *Numeric) Add(amount float64) *UpdateExpression {
 	f := func(c uint) (string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(amount, c)
 		s := field.name + " " + ph
@@ -276,7 +276,7 @@ func (field *dynamoCollectionField) Append(a interface{}) *UpdateExpression {
 	return &UpdateExpression{op: "SET", f: f}
 }
 
-func (field *dynamoFieldMap) RemoveKey(s string) *UpdateExpression {
+func (field *Map) RemoveKey(s string) *UpdateExpression {
 	f := func(c uint) (string, map[string]interface{}, uint) {
 		c++
 		m := make(map[string]interface{})
@@ -295,10 +295,10 @@ func (field *dynamoCollectionField) RemoveElemIndex(idx uint) *UpdateExpression 
 	return &UpdateExpression{op: "REMOVE", f: f}
 }
 
-func (field *dynamoFieldNumeric) Increment(by uint) *UpdateExpression {
+func (field *Numeric) Increment(by uint) *UpdateExpression {
 	return field.Add(float64(by))
 }
 
-func (field *dynamoFieldNumeric) Decrement(by uint) *UpdateExpression {
+func (field *Numeric) Decrement(by uint) *UpdateExpression {
 	return field.Add(-float64(by))
 }

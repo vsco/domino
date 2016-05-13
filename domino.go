@@ -70,42 +70,42 @@ func (d dynamoField) IsEmpty() bool {
 	return d.empty
 }
 
-type emptyDynamoField struct {
+type Empty struct {
 	dynamoField
 }
 
-type dynamoFieldNumeric struct {
+type Numeric struct {
 	dynamoValueField
 }
-type dynamoFieldNumericSet struct {
+type NumericSet struct {
 	dynamoCollectionField
 }
-type dynamoFieldString struct {
+type String struct {
 	dynamoValueField
 }
-type dynamoFieldStringSet struct {
+type StringSet struct {
 	dynamoCollectionField
 }
-type dynamoFieldBinary struct {
+type Binary struct {
 	dynamoValueField
 }
-type dynamoFieldBinarySet struct {
+type BinarySet struct {
 	dynamoCollectionField
 }
-type dynamoFieldBool struct {
+type Bool struct {
 	dynamoValueField
 }
 
-type dynamoFieldList struct {
+type List struct {
 	dynamoCollectionField
 }
 
-type dynamoFieldMap struct {
+type Map struct {
 	dynamoCollectionField
 }
 
-func EmptyDynamoField() emptyDynamoField {
-	return emptyDynamoField{
+func EmptyField() Empty {
+	return Empty{
 		dynamoField{
 			empty: true,
 			_type: NULL,
@@ -113,8 +113,8 @@ func EmptyDynamoField() emptyDynamoField {
 	}
 }
 
-func DynamoFieldNumeric(name string) dynamoFieldNumeric {
-	return dynamoFieldNumeric{
+func NumericField(name string) Numeric {
+	return Numeric{
 		dynamoValueField{
 			dynamoField{
 				name:  name,
@@ -124,8 +124,8 @@ func DynamoFieldNumeric(name string) dynamoFieldNumeric {
 	}
 }
 
-func DynamoFieldNumericSet(name string) dynamoFieldNumericSet {
-	return dynamoFieldNumericSet{
+func NumericSetField(name string) NumericSet {
+	return NumericSet{
 		dynamoCollectionField{
 			dynamoField{
 				name:  name,
@@ -135,8 +135,8 @@ func DynamoFieldNumericSet(name string) dynamoFieldNumericSet {
 	}
 }
 
-func DynamoFieldString(name string) dynamoFieldString {
-	return dynamoFieldString{
+func StringField(name string) String {
+	return String{
 		dynamoValueField{
 			dynamoField{
 				name:  name,
@@ -146,8 +146,8 @@ func DynamoFieldString(name string) dynamoFieldString {
 	}
 }
 
-func DynamoFieldBinary(name string) dynamoFieldBinary {
-	return dynamoFieldBinary{
+func BinaryField(name string) Binary {
+	return Binary{
 		dynamoValueField{
 			dynamoField{
 				name:  name,
@@ -156,8 +156,8 @@ func DynamoFieldBinary(name string) dynamoFieldBinary {
 		},
 	}
 }
-func DynamoFieldBinarySet(name string) dynamoFieldBinarySet {
-	return dynamoFieldBinarySet{
+func BinarySetField(name string) BinarySet {
+	return BinarySet{
 		dynamoCollectionField{
 			dynamoField{
 				name:  name,
@@ -167,8 +167,8 @@ func DynamoFieldBinarySet(name string) dynamoFieldBinarySet {
 	}
 }
 
-func DynamoFieldStringSet(name string) dynamoFieldStringSet {
-	return dynamoFieldStringSet{
+func StringSetField(name string) StringSet {
+	return StringSet{
 		dynamoCollectionField{
 			dynamoField{
 				name:  name,
@@ -178,8 +178,8 @@ func DynamoFieldStringSet(name string) dynamoFieldStringSet {
 	}
 }
 
-func DynamoFieldList(name string) dynamoFieldList {
-	return dynamoFieldList{
+func ListField(name string) List {
+	return List{
 		dynamoCollectionField{
 			dynamoField{
 				name:  name,
@@ -189,8 +189,8 @@ func DynamoFieldList(name string) dynamoFieldList {
 	}
 }
 
-func DynamoFieldMap(name string) dynamoFieldMap {
-	return dynamoFieldMap{
+func MapField(name string) Map {
+	return Map{
 		dynamoCollectionField{
 			dynamoField{
 				name:  name,
@@ -213,8 +213,8 @@ type GlobalSecondaryIndex struct {
 
 /*Key values for use in creating queries*/
 type KeyValue struct {
-	partitionKey interface{}
-	rangeKey     interface{}
+	PartitionKey interface{}
+	RangeKey     interface{}
 }
 
 /***************************************************************************************/
@@ -226,9 +226,9 @@ type get dynamodb.GetItemInput
 func (table DynamoTable) GetItem(key KeyValue) *get {
 	q := get(dynamodb.GetItemInput{})
 	q.TableName = &table.Name
-	appendAttribute(&q.Key, table.PartitionKey.Name(), key.partitionKey)
+	appendAttribute(&q.Key, table.PartitionKey.Name(), key.PartitionKey)
 	if !table.RangeKey.IsEmpty() {
-		appendAttribute(&q.Key, table.RangeKey.Name(), key.rangeKey)
+		appendAttribute(&q.Key, table.RangeKey.Name(), key.RangeKey)
 	}
 	return &q
 }
@@ -269,10 +269,10 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 
 	for _, kv := range items {
 		m := map[string]interface{}{
-			table.PartitionKey.Name(): kv.partitionKey,
+			table.PartitionKey.Name(): kv.PartitionKey,
 		}
 		if !table.RangeKey.IsEmpty() {
-			m[table.RangeKey.Name()] = kv.rangeKey
+			m[table.RangeKey.Name()] = kv.RangeKey
 		}
 
 		attributes, err := dynamodbattribute.MarshalMap(m)
@@ -868,19 +868,19 @@ func appendKeyInterface(m *map[string]interface{}, table DynamoTable, key KeyVal
 	if *m == nil {
 		*m = map[string]interface{}{}
 	}
-	(*m)[table.PartitionKey.Name()] = key.partitionKey
+	(*m)[table.PartitionKey.Name()] = key.PartitionKey
 
 	if !table.RangeKey.IsEmpty() {
-		(*m)[table.RangeKey.Name()] = key.rangeKey
+		(*m)[table.RangeKey.Name()] = key.RangeKey
 	}
 
 }
 func appendKeyAttribute(m *map[string]*dynamodb.AttributeValue, table DynamoTable, key KeyValue) (err error) {
-	err = appendAttribute(m, table.PartitionKey.Name(), key.partitionKey)
+	err = appendAttribute(m, table.PartitionKey.Name(), key.PartitionKey)
 	if err != nil {
 		return
 	} else if !table.RangeKey.IsEmpty() {
-		err = appendAttribute(m, table.RangeKey.Name(), key.rangeKey)
+		err = appendAttribute(m, table.RangeKey.Name(), key.RangeKey)
 		if err != nil {
 			return
 		}

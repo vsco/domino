@@ -6,7 +6,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
-	// "github.com/negator/gotask"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"strconv"
@@ -19,16 +18,16 @@ const localDynamoHost = "http://127.0.0.1:8080"
 
 type UserTable struct {
 	DynamoTable
-	emailField    dynamoFieldString
-	passwordField dynamoFieldString
+	emailField    String
+	passwordField String
 
-	registrationDate dynamoFieldNumeric
-	loginCount       dynamoFieldNumeric
-	lastLoginDate    dynamoFieldNumeric
-	visits           dynamoFieldNumericSet
-	preferences      dynamoFieldMap
-	nameField        dynamoFieldString
-	lastNameField    dynamoFieldString
+	registrationDate Numeric
+	loginCount       Numeric
+	lastLoginDate    Numeric
+	visits           NumericSet
+	preferences      Map
+	nameField        String
+	lastNameField    String
 
 	registrationDateIndex LocalSecondaryIndex
 	nameGlobalIndex       GlobalSecondaryIndex
@@ -44,11 +43,11 @@ type User struct {
 }
 
 func NewUserTable() UserTable {
-	pk := DynamoFieldString("email")
-	rk := DynamoFieldString("password")
-	firstName := DynamoFieldString("firstName")
-	lastName := DynamoFieldString("lastName")
-	reg := DynamoFieldNumeric("registrationDate")
+	pk := StringField("email")
+	rk := StringField("password")
+	firstName := StringField("firstName")
+	lastName := StringField("lastName")
+	reg := NumericField("registrationDate")
 	return UserTable{
 		DynamoTable{
 			Name:         "dev-ore-feed",
@@ -58,10 +57,10 @@ func NewUserTable() UserTable {
 		pk,  //email
 		rk,  //password
 		reg, //registration
-		DynamoFieldNumeric("loginCount"),
-		DynamoFieldNumeric("lastLoginDate"),
-		DynamoFieldNumericSet("visits"),
-		DynamoFieldMap("preferences"),
+		NumericField("loginCount"),
+		NumericField("lastLoginDate"),
+		NumericSetField("visits"),
+		MapField("preferences"),
 		firstName,
 		lastName,
 		LocalSecondaryIndex{"registrationDate-index", reg},
