@@ -67,7 +67,7 @@ func NewUserTable() MyTable {
 	}
 }
 
-table := NewMyTable() 
+table := NewUserTable() 
 
 ```
 
