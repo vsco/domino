@@ -24,7 +24,7 @@ type UserTable struct {
 	loginCount       domino.Numeric
 	lastLoginDate    domino.Numeric
 	vists            domino.NumericSet
-	preferences      dynamoFieldMap
+	preferences      domino.MapField
 	nameField        domino.String
 	lastNameField    domino.String
 
