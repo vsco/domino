@@ -77,20 +77,22 @@ Use a fluent style DSL to interact with your table. All DynamoDB data operations
 Put Item
 ```go
 p := table.
-	PutItem(User{"naveen@email.com","password"}).
+	PutItem(
+		User{"naveen@email.com","password"},
+	).
 	SetConditionExpression(
 		table.PartitionKey.NotExists()
-	).
-	Build()
+	)
 err := dynamo.PutItem(q).ExecuteWith(dynamo)
 ```
 
 GetItem
 ```go
 q = table.
-	GetItem(KeyValue{"naveen@email.com", "password"}).
-	SetConsistentRead(true).
-	Build()  
+	GetItem(
+		KeyValue{"naveen@email.com", "password"}, 
+	).
+	SetConsistentRead(true)
 r, err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo, &User{}) //Pass in domain object template object
 
 user := r.(*User) //Must cast back to domain object pointer
@@ -101,14 +103,16 @@ user := r.(*User) //Must cast back to domain object pointer
 Update Item
 ```go
 q := table.
-	UpdateItem(KeyValue{"naveen@email.com", "password"}).
+	UpdateItem(
+		KeyValue{"naveen@email.com", "password"}
+	).
 	SetUpdateExpression(
 		table.loginCount.Increment(1),
 		table.lastLoginDate.SetField(time.Now().UnixNano(), false),
 		table.registrationDate.SetField(time.Now().UnixNano(), true),
 		table.vists.RemoveElemIndex(0),
 		table.preferences.RemoveKey("update_email"),
-	).Build()
+	)
 err = dynamo.UpdateItem(q).ExecuteWith(dynamo)
 ```
 
@@ -119,9 +123,9 @@ q = table.
 		KeyValue{"naveen@email.com", "password"},
 		KeyValue{"joe@email.com", "password"},
 	).
-	SetConsistentRead(true).
-	Build()
-	unprocessedUsers := []*User{}
+	SetConsistentRead(true)
+
+	unprocessedUsers := []*User{} //Set of unprocessed items (if any), returned by dynamo
 	q.ExecuteWith(db, func() interface{} {
 		user := User{}
 		users = append(users, &user)
@@ -146,8 +150,7 @@ q = table.
 		table.nameField.Equals("naveen"),
 		&p,
 	).
-	SetFilterExpression(expr).
-	Build()
+	SetFilterExpression(expr)
 
 
 ```
