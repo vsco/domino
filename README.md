@@ -125,10 +125,10 @@ q = table.
 	).
 	SetConsistentRead(true)
 
-	unprocessedUsers := []*User{} //Set of unprocessed items (if any), returned by dynamo
+	users := []*User{} //Set of unprocessed items (if any), returned by dynamo
 	q.ExecuteWith(db, func() interface{} {
 		user := User{}
-		unprocessedUsers = append(users, &user)
+		users = append(users, &user)
 		return &user
 	})
 ```
