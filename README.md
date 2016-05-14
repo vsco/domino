@@ -1,5 +1,5 @@
 # Domino
-Typesafe DynamoDB query DSL for Go
+Concise, fluent, typesafe GO based query DSL for DynamoDB
 
 
 Features:  
