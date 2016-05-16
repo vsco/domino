@@ -317,7 +317,15 @@ func TestDynamoQuery(t *testing.T) {
 	users := []User{}
 	channel, errChan := q.ExecuteWith(db, &User{})
 
-SELECT:
+	for u := range channel {
+		users = append(users, *u.(*User))
+	}
+
+	err = <-errChan
+
+	assert.Nil(t, err)
+
+	/*SELECT:
 	for {
 		select {
 		case u := <-channel:
@@ -330,7 +338,7 @@ SELECT:
 			break SELECT
 		}
 	}
-
+	*/
 	assert.Nil(t, err)
 	assert.Equal(t, limit, len(users))
 }
@@ -361,12 +369,8 @@ func TestDynamoQueryError(t *testing.T) {
 		SetScanForward(true).
 		ExecuteWith(db, &User{})
 
-CONTINUE:
-
-	select {
-	case err = <-errChan:
-	case _ = <-channel:
-		goto CONTINUE
+	err = <-errChan
+	for _ = range channel {
 	}
 
 	assert.NotNil(t, err)

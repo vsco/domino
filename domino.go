@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
 
-/*DynamoDBIFace is the interface to the underlying aws dyanmo db api*/
+/*DynamoDBIFace is the interface to the underlying aws dynamo db api*/
 type DynamoDBIFace interface {
 	CreateTable(input *dynamodb.CreateTableInput) (*dynamodb.CreateTableOutput, error)
 	DeleteTable(input *dynamodb.DeleteTableInput) (*dynamodb.DeleteTableOutput, error)
@@ -237,7 +237,7 @@ type LocalSecondaryIndex struct {
 type GlobalSecondaryIndex struct {
 	Name         string
 	PartitionKey dynamoFieldIFace
-	RangeKey     dynamoFieldIFace //Optional param. If no range key set to nil
+	RangeKey     dynamoFieldIFace //Optional param. If no range key set to EmptyField
 }
 
 /*KeyValue ... A Key Value struct for use in GetItem and BatchWriteItem queries*/
@@ -1037,9 +1037,9 @@ func appendAttribute(m *map[string]*dynamodb.AttributeValue, key string, value i
 func handleAwsErr(err error) error {
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
-			fmt.Errorf("Error: %v, %v", awsErr.Code(), awsErr.Message())
+			return fmt.Errorf("Error: %v, %v", awsErr.Code(), awsErr.Message())
 		} else {
-			err.Error()
+			return err.Error()
 		}
 	}
 	return err
