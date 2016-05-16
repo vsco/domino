@@ -171,12 +171,12 @@ Streaming Results
 		SetScanForward(true)
 
 	channel, errChan := q.ExecuteWith(db, &User{})
-
+	users := []*User{}
 	for {
 		select {
 		case u, ok := <-channel:
 			if ok {
-				fmt.Println(u.(*User))
+				users = append(users, u.(*User))
 			}
 		case err = <-errChan:
 
