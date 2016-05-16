@@ -1,5 +1,5 @@
 # Domino
-Typesafe DynamoDB query DSL for Go
+Concise, fluent, typesafe GO based query DSL for DynamoDB
 
 
 Features:  
@@ -125,10 +125,10 @@ q = table.
 	).
 	SetConsistentRead(true)
 
-	unprocessedUsers := []*User{} //Set of unprocessed items (if any), returned by dynamo
+	users := []*User{} //Set of unprocessed items (if any), returned by dynamo
 	q.ExecuteWith(db, func() interface{} {
 		user := User{}
-		unprocessedUsers = append(users, &user)
+		users = append(users, &user)
 		return &user
 	})
 ```
@@ -171,12 +171,12 @@ Streaming Results
 		SetScanForward(true)
 
 	channel, errChan := q.ExecuteWith(db, &User{})
-
+	users := []*User{}
 	for {
 		select {
 		case u, ok := <-channel:
 			if ok {
-				fmt.Println(u.(*User))
+				users = append(users, u.(*User))
 			}
 		case err = <-errChan:
 
