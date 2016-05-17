@@ -1,0 +1,7 @@
+#!/bin/bash
+set -e
+
+export GO15VENDOREXPERIMENT=1
+script/require-glide
+
+glide install

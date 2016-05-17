@@ -1,0 +1,21 @@
+sudo: false
+language: go
+go: 1.6
+
+branches:
+  only:
+    - master
+
+before_script:
+  - echo java -version
+  - script/startdb
+install:
+  - script/authenticate-with-vscoci
+  - script/bootstrap
+script:
+  - script/test
+
+
+notifications:
+  email: false
+  slack: false
