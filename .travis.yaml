@@ -14,8 +14,6 @@ install:
   - script/bootstrap
 script:
   - script/test
-
-
 notifications:
   email: false
   slack: false
