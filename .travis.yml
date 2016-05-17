@@ -8,7 +8,6 @@ branches:
 install:
   - script/bootstrap
 before_script:
-  - echo java -version
   - script/startdb
 script:
   - script/test
