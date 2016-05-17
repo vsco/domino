@@ -2,10 +2,10 @@ package domino
 
 import (
 	"fmt"
-
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"time"
 )
 
 /*DynamoDBIFace is the interface to the underlying aws dynamo db api*/
@@ -416,7 +416,7 @@ func (table DynamoTable) PutItem(i interface{}) *put {
 }
 
 func (d *put) SetConditionExpression(c Expression) *put {
-	s, m, _ := c.construct(1)
+	s, m, _ := c.construct(1, true)
 
 	d.ConditionExpression = &s
 	d.ExpressionAttributeValues, _ = dynamodbattribute.MarshalMap(m)
@@ -578,7 +578,7 @@ func (table DynamoTable) DeleteItem(key KeyValue) *deleteItem {
 }
 
 func (d *deleteItem) SetConditionExpression(c Expression) *deleteItem {
-	s, m, _ := c.construct(1)
+	s, m, _ := c.construct(1, true)
 	d.ConditionExpression = &s
 	d.ExpressionAttributeValues, _ = dynamodbattribute.MarshalMap(m)
 	return d
@@ -619,7 +619,7 @@ func (table DynamoTable) UpdateItem(key KeyValue) *update {
 
 func (d *update) SetConditionExpression(c Expression) *update {
 	delayed := func() error {
-		s, m, _ := c.construct(1)
+		s, m, _ := c.construct(1, true)
 		d.input.ConditionExpression = &s
 		ea, err := dynamodbattribute.MarshalMap(m)
 		if err != nil {
@@ -707,7 +707,7 @@ func (table DynamoTable) Query(partitionKeyCondition keyCondition, rangeKeyCondi
 		e = partitionKeyCondition
 	}
 
-	s, m, _ := e.construct(0)
+	s, m, _ := e.construct(0, true)
 	q.TableName = &table.Name
 	q.KeyConditionExpression = &s
 	for k, v := range m {
@@ -743,7 +743,7 @@ func (d *query) SetScanForward(forward bool) *query {
 }
 
 func (d *query) SetFilterExpression(c Expression) *query {
-	s, m, _ := c.construct(1)
+	s, m, _ := c.construct(1, true)
 	d.FilterExpression = &s
 
 	for k, v := range m {
@@ -849,7 +849,7 @@ func (d *scan) SetLimit(limit int) *scan {
 }
 
 func (d *scan) SetFilterExpression(c Expression) *scan {
-	s, m, _ := c.construct(1)
+	s, m, _ := c.construct(1, true)
 	d.FilterExpression = &s
 
 	for k, v := range m {
@@ -971,10 +971,12 @@ func (table DynamoTable) CreateTable() *createTable {
 
 func (d *createTable) Build() *dynamodb.CreateTableInput {
 	r := dynamodb.CreateTableInput(*d)
+	defer time.Sleep(time.Duration(500) * time.Millisecond)
 	return &r
 }
 
 func (d *createTable) ExecuteWith(dynamo DynamoDBIFace) error {
+	defer time.Sleep(time.Duration(500) * time.Millisecond)
 	_, err := dynamo.CreateTable(d.Build())
 	return handleAwsErr(err)
 }
@@ -995,6 +997,7 @@ func (d *deleteTable) Build() *dynamodb.DeleteTableInput {
 }
 
 func (d *deleteTable) ExecuteWith(dynamo DynamoDBIFace) error {
+	defer time.Sleep(time.Duration(500) * time.Millisecond)
 	_, err := dynamo.DeleteTable(d.Build())
 	return handleAwsErr(err)
 }

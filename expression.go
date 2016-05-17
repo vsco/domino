@@ -8,7 +8,7 @@ import (
 
 /*Expression represents a dynamo condition expression, i.e. And(if_empty(...), size(path) >0) */
 type Expression interface {
-	construct(uint) (string, map[string]interface{}, uint)
+	construct(uint, bool) (string, map[string]interface{}, uint)
 }
 type expressionGroup struct {
 	expressions []Expression
@@ -49,16 +49,16 @@ func generatePlaceholder(a interface{}, counter uint) string {
 /*********************************************************************************/
 /*Groups expression by AND and OR operators, i.e. <expr> OR <expr>*/
 
-func (e expressionGroup) construct(counter uint) (string, map[string]interface{}, uint) {
+func (e expressionGroup) construct(counter uint, topLevel bool) (string, map[string]interface{}, uint) {
 	a := e.expressions
 	m := make(map[string]interface{})
-	r := "("
+	var r string
 
 	for i := 0; i < len(a); i++ {
 		if i > 0 {
 			r += " " + e.op + " "
 		}
-		substring, placeholders, newCounter := a[i].construct(counter)
+		substring, placeholders, newCounter := a[i].construct(counter, false)
 		r += substring
 		for k, v := range placeholders {
 			m[k] = v
@@ -67,7 +67,10 @@ func (e expressionGroup) construct(counter uint) (string, map[string]interface{}
 		counter = newCounter
 	}
 
-	r += ")"
+	if !topLevel {
+		r = fmt.Sprintf("(%v)", r)
+	}
+
 	return r, m, counter
 }
 
@@ -89,7 +92,7 @@ func And(c ...Expression) expressionGroup {
 
 /*String stringifies expressions for easy debugging*/
 func (c expressionGroup) String() string {
-	s, _, _ := c.construct(0)
+	s, _, _ := c.construct(0, true)
 	return s
 }
 
@@ -97,14 +100,18 @@ func (c expressionGroup) String() string {
 /******************************** Negation Expression ****************************/
 /*********************************************************************************/
 
-func (n negation) construct(counter uint) (string, map[string]interface{}, uint) {
-	s, m, c := n.expression.construct(counter)
-	r := "(NOT " + s + ")"
+func (n negation) construct(counter uint, topLevel bool) (string, map[string]interface{}, uint) {
+	s, m, c := n.expression.construct(counter, topLevel)
+	r := "NOT " + s
+	if !topLevel {
+		r = fmt.Sprintf("(%v)", r)
+	}
+
 	return r, m, c
 }
 
 func (c negation) String() string {
-	s, _, _ := c.construct(0)
+	s, _, _ := c.construct(0, true)
 	return s
 }
 
@@ -118,7 +125,7 @@ func Not(c Expression) negation {
 /*********************************************************************************/
 /*Conditions that only apply to keys*/
 
-func (c condition) construct(counter uint) (string, map[string]interface{}, uint) {
+func (c condition) construct(counter uint, topLevel bool) (string, map[string]interface{}, uint) {
 	a := make([]string, len(c.args))
 	m := make(map[string]interface{})
 	for i, b := range c.args {
@@ -131,7 +138,7 @@ func (c condition) construct(counter uint) (string, map[string]interface{}, uint
 }
 
 func (c condition) String() string {
-	s, _, _ := c.construct(0)
+	s, _, _ := c.construct(0, true)
 	return s
 }
 
