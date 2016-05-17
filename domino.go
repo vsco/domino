@@ -268,7 +268,7 @@ func (d *get) SetConsistentRead(c bool) *get {
 	return d
 }
 
-func (d *get) build() *dynamodb.GetItemInput {
+func (d *get) Build() *dynamodb.GetItemInput {
 	r := dynamodb.GetItemInput(*d)
 	return &r
 }
@@ -350,7 +350,7 @@ func (d *batchGet) SetConsistentRead(c bool) *batchGet {
 	return d
 }
 
-func (d *batchGet) build() (input *dynamodb.BatchGetItemInput, err error) {
+func (d *batchGet) Build() (input *dynamodb.BatchGetItemInput, err error) {
 	for _, function := range d.delayedFunctions {
 		err = function()
 		if err != nil {
@@ -423,7 +423,7 @@ func (d *put) SetConditionExpression(c Expression) *put {
 	return d
 }
 
-func (d *put) build() *dynamodb.PutItemInput {
+func (d *put) Build() *dynamodb.PutItemInput {
 	r := dynamodb.PutItemInput(*d)
 	return &r
 }
@@ -521,7 +521,7 @@ func (d *batchPut) DeleteItems(keys ...KeyValue) *batchPut {
 	return d
 }
 
-func (d *batchPut) build() (input []dynamodb.BatchWriteItemInput, err error) {
+func (d *batchPut) Build() (input []dynamodb.BatchWriteItemInput, err error) {
 	for _, function := range d.delayedFunctions {
 		if err = function(); err != nil {
 			return
@@ -583,7 +583,7 @@ func (d *deleteItem) SetConditionExpression(c Expression) *deleteItem {
 	return d
 }
 
-func (d *deleteItem) build() *dynamodb.DeleteItemInput {
+func (d *deleteItem) Build() *dynamodb.DeleteItemInput {
 	r := dynamodb.DeleteItemInput(*d)
 	return &r
 }
@@ -673,7 +673,7 @@ func (d *update) SetUpdateExpression(exprs ...*updateExpression) *update {
 	return d
 }
 
-func (d *update) build() *dynamodb.UpdateItemInput {
+func (d *update) Build() *dynamodb.UpdateItemInput {
 	r := dynamodb.UpdateItemInput((*d).input)
 	return &r
 }
@@ -761,7 +761,7 @@ func (d *query) SetGlobalIndex(idx GlobalSecondaryIndex) *query {
 	return d
 }
 
-func (d *query) build() *dynamodb.QueryInput {
+func (d *query) Build() *dynamodb.QueryInput {
 	r := dynamodb.QueryInput(*d)
 	return &r
 }
@@ -867,7 +867,7 @@ func (d *scan) SetGlobalIndex(idx GlobalSecondaryIndex) *scan {
 	return d
 }
 
-func (d *scan) build() *dynamodb.ScanInput {
+func (d *scan) Build() *dynamodb.ScanInput {
 	r := dynamodb.ScanInput(*d)
 	return &r
 }
@@ -968,7 +968,7 @@ func (table DynamoTable) CreateTable() *createTable {
 	return &c
 }
 
-func (d *createTable) build() *dynamodb.CreateTableInput {
+func (d *createTable) Build() *dynamodb.CreateTableInput {
 	r := dynamodb.CreateTableInput(*d)
 	return &r
 }
@@ -988,7 +988,7 @@ func (table DynamoTable) DeleteTable() *deleteTable {
 	return &r
 }
 
-func (d *deleteTable) build() *dynamodb.DeleteTableInput {
+func (d *deleteTable) Build() *dynamodb.DeleteTableInput {
 	r := dynamodb.DeleteTableInput(*d)
 	return &r
 }
