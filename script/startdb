@@ -3,4 +3,4 @@
 #java -Djava.library.path=./script/dynamodb/DynamoDBLocal_lib -jar ./script/dynamodb/DynamoDBLocal.jar -inMemory -port 8080 &
 #sleep 10
 
-dynalite --port 8080 --createTableMs 0 --deleteTableMs 0 --updateTableMs 0
+nohup dynalite --port 8080 --createTableMs 0 --deleteTableMs 0 --updateTableMs 0 &
