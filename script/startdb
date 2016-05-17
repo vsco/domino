@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-java -Djava.library.path=./script/dynamodb/DynamoDBLocal_lib -jar ./script/dynamodb/DynamoDBLocal.jar -inMemory -port 8080 &
+nohup java -Djava.library.path=./script/dynamodb/DynamoDBLocal_lib -jar ./script/dynamodb/DynamoDBLocal.jar -inMemory -port 8080 &
 sleep 10
