@@ -90,6 +90,8 @@ func TestGetItem(t *testing.T) {
 	err := table.CreateTable().ExecuteWith(db)
 	defer table.DeleteTable().ExecuteWith(db)
 
+	assert.Nil(t, err)
+
 	item := User{Email: "naveen@email.com", Password: "password"}
 	err = table.PutItem(item).ExecuteWith(db)
 	assert.Nil(t, err)
@@ -107,6 +109,8 @@ func TestGetItemEmpty(t *testing.T) {
 	err := table.CreateTable().ExecuteWith(db)
 	defer table.DeleteTable().ExecuteWith(db)
 
+	assert.Nil(t, err)
+
 	user, err := table.GetItem(KeyValue{"naveen@email.com", "password"}).ExecuteWith(db, &User{})
 	assert.Nil(t, err)
 	assert.Nil(t, user)
@@ -117,6 +121,8 @@ func TestBatchPutItem(t *testing.T) {
 	db := NewDB()
 	err := table.CreateTable().ExecuteWith(db)
 	defer table.DeleteTable().ExecuteWith(db)
+
+	assert.Nil(t, err)
 
 	q := table.
 		BatchWriteItem().
@@ -161,9 +167,13 @@ func TestUpdateItem(t *testing.T) {
 	err := table.CreateTable().ExecuteWith(db)
 	defer table.DeleteTable().ExecuteWith(db)
 
+	assert.Nil(t, err)
+
 	item := User{Email: "naveen@email.com", Password: "password", Visits: []int64{time.Now().UnixNano()}}
 	q := table.PutItem(item)
 	err = q.ExecuteWith(db)
+
+	assert.Nil(t, err)
 
 	u := table.
 		UpdateItem(KeyValue{"naveen@email.com", "password"}).
@@ -317,15 +327,7 @@ func TestDynamoQuery(t *testing.T) {
 	users := []User{}
 	channel, errChan := q.ExecuteWith(db, &User{})
 
-	for u := range channel {
-		users = append(users, *u.(*User))
-	}
-
-	err = <-errChan
-
-	assert.Nil(t, err)
-
-	/*SELECT:
+SELECT:
 	for {
 		select {
 		case u := <-channel:
@@ -338,7 +340,7 @@ func TestDynamoQuery(t *testing.T) {
 			break SELECT
 		}
 	}
-	*/
+
 	assert.Nil(t, err)
 	assert.Equal(t, limit, len(users))
 }
@@ -369,8 +371,19 @@ func TestDynamoQueryError(t *testing.T) {
 		SetScanForward(true).
 		ExecuteWith(db, &User{})
 
-	err = <-errChan
-	for _ = range channel {
+	users := []User{}
+SELECT:
+	for {
+		select {
+		case u := <-channel:
+			if u != nil {
+				users = append(users, *u.(*User))
+			} else {
+				break SELECT
+			}
+		case err = <-errChan:
+			break SELECT
+		}
 	}
 
 	assert.NotNil(t, err)
