@@ -2,6 +2,7 @@ package domino
 
 import (
 	"fmt"
+
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
@@ -282,7 +283,7 @@ func (d *get) Build() *dynamodb.GetItemInput {
  ** Returns a tuple of the hydrated item struct, or an error
  */
 func (d *get) ExecuteWith(dynamo DynamoDBIFace, item interface{}) (r interface{}, err error) {
-	out, err := dynamo.GetItem(d.build())
+	out, err := dynamo.GetItem(d.Build())
 	if err != nil {
 		err = handleAwsErr(err)
 		return
@@ -310,7 +311,7 @@ type batchGet struct {
 
 /*BatchGetItem represents dynamo batch get item call*/
 func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
-	/*Delay the attribute value construction, until build time*/
+	/*Delay the attribute value construction, until Build time*/
 	input := &dynamodb.BatchGetItemInput{}
 	delayed := func() error {
 		k := make(map[string]*dynamodb.KeysAndAttributes)
@@ -372,7 +373,7 @@ func (d *batchGet) Build() (input *dynamodb.BatchGetItemInput, err error) {
 func (d *batchGet) ExecuteWith(dynamo DynamoDBIFace, nextItem func() interface{}) error {
 
 	retry := 0
-	input, err := d.build()
+	input, err := d.Build()
 Execute:
 
 	if err != nil {
@@ -434,7 +435,7 @@ func (d *put) Build() *dynamodb.PutItemInput {
  **
  */
 func (d *put) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.PutItem(d.build())
+	_, err := dynamo.PutItem(d.Build())
 	if err != nil {
 		return handleAwsErr(err)
 	}
@@ -540,7 +541,7 @@ func (d *batchPut) Build() (input []dynamodb.BatchWriteItemInput, err error) {
  */
 func (d *batchPut) ExecuteWith(dynamo DynamoDBIFace, unprocessedItem func() interface{}) error {
 
-	batches, err := d.build()
+	batches, err := d.Build()
 	if err != nil {
 		return err
 	}
@@ -594,7 +595,7 @@ func (d *deleteItem) Build() *dynamodb.DeleteItemInput {
  **
  */
 func (d *deleteItem) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.DeleteItem(d.build())
+	_, err := dynamo.DeleteItem(d.Build())
 	if err != nil {
 		return handleAwsErr(err)
 	}
@@ -684,7 +685,7 @@ func (d *update) Build() *dynamodb.UpdateItemInput {
  **
  */
 func (d *update) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.UpdateItem(d.build())
+	_, err := dynamo.UpdateItem(d.Build())
 	if err != nil {
 		return handleAwsErr(err)
 	}
@@ -788,7 +789,7 @@ func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c cha
 		if d.Limit != nil && count >= *d.Limit {
 			return
 		}
-		out, err := dynamodb.Query(d.build())
+		out, err := dynamodb.Query(d.Build())
 		if err != nil {
 			e <- handleAwsErr(err)
 			return
@@ -894,7 +895,7 @@ func (d *scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 		if d.Limit != nil && count >= *d.Limit {
 			return
 		}
-		out, err := dynamodb.Scan(d.build())
+		out, err := dynamodb.Scan(d.Build())
 		if err != nil {
 			e <- handleAwsErr(err)
 			return
@@ -974,7 +975,7 @@ func (d *createTable) Build() *dynamodb.CreateTableInput {
 }
 
 func (d *createTable) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.CreateTable(d.build())
+	_, err := dynamo.CreateTable(d.Build())
 	return handleAwsErr(err)
 }
 
@@ -994,7 +995,7 @@ func (d *deleteTable) Build() *dynamodb.DeleteTableInput {
 }
 
 func (d *deleteTable) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.DeleteTable(d.build())
+	_, err := dynamo.DeleteTable(d.Build())
 	return handleAwsErr(err)
 }
 
@@ -1038,9 +1039,8 @@ func handleAwsErr(err error) error {
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
 			return fmt.Errorf("Error: %v, %v", awsErr.Code(), awsErr.Message())
-		} else {
-			return err.Error()
 		}
 	}
+
 	return err
 }

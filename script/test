@@ -7,7 +7,7 @@ cd $(dirname "$0")/..
 
 script/require-glide
 
-pkgs=$(glide novendor -x |  grep -v "^.$")
+pkgs=.
 
 TARGET="$(glide novendor)"
 if [ "$#" -gt "0" ]; then
