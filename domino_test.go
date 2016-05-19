@@ -261,7 +261,7 @@ func TestExpressions(t *testing.T) {
 		SetScanForward(true).
 		SetFilterExpression(expr)
 
-	channel, errChan := q.ExecuteWith(db, func() interface{} {
+	channel, errChan := q.StreamWith(db, func() interface{} {
 		u := User{}
 		return &u
 	})
@@ -324,8 +324,55 @@ func TestDynamoQuery(t *testing.T) {
 		SetLimit(limit).
 		SetScanForward(true)
 
+	items, err = q.ExecuteWith(db, &User{})
+
+	assert.Nil(t, err)
+	assert.Equal(t, limit, len(items))
+
+}
+
+func TestDynamoStreamQuery(t *testing.T) {
+
+	table := NewUserTable()
+	db := NewDB()
+
+	err := table.CreateTable().ExecuteWith(db)
+	defer table.DeleteTable().ExecuteWith(db)
+
+	assert.Nil(t, err)
+
+	me := &User{Email: "naveen@email.com", Password: "password"}
+	items := []interface{}{me}
+	for i := 0; i < 1000; i++ {
+		e := "naveen@email.com"
+		items = append(items, &User{Email: e, Password: "password" + strconv.Itoa(i)})
+	}
+
+	ui := []*User{}
+	w := table.BatchWriteItem().PutItems(items...)
+
+	err = w.ExecuteWith(db, func() interface{} {
+		u := User{}
+		ui = append(ui, &u)
+		return &u
+	})
+
+	assert.Nil(t, err)
+
+	assert.Empty(t, ui)
+
+	limit := 100
+	p := table.passwordField.BeginsWith("password")
+	q := table.
+		Query(
+			table.emailField.Equals("naveen@email.com"),
+			&p,
+		).
+		SetLimit(limit).
+		SetScanForward(true)
+
 	users := []User{}
-	channel, errChan := q.ExecuteWith(db, &User{})
+	channel, errChan := q.StreamWith(db, &User{})
 
 SELECT:
 	for {
@@ -369,7 +416,7 @@ func TestDynamoQueryError(t *testing.T) {
 			nil,
 		).
 		SetScanForward(true).
-		ExecuteWith(db, &User{})
+		StreamWith(db, &User{})
 
 	users := []User{}
 SELECT:

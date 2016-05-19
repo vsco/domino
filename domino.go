@@ -775,7 +775,7 @@ func (d *query) Build() *dynamodb.QueryInput {
  ** 			returned channel.
  **
  */
-func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
+func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
 
 	c = make(chan interface{})
 	e = make(chan error)
@@ -814,6 +814,27 @@ func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c cha
 	}()
 
 	return
+}
+
+func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (items []interface{}, err error) {
+	c, e := d.StreamWith(dynamodb, nextItem)
+	items = []interface{}{}
+
+STREAM:
+	for {
+		select {
+		case item := <-c:
+			if item == nil {
+				break STREAM
+			}
+			items = append(items, item)
+
+		case err = <-e:
+			break STREAM
+		}
+	}
+
+	return items, err
 }
 
 /***************************************************************************************/
