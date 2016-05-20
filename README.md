@@ -170,7 +170,7 @@ Streaming Results
 		SetLimit(100).
 		SetScanForward(true)
 
-	channel, errChan := q.ExecuteWith(db, &User{})
+	channel, errChan := q.StreamWith(db, &User{})
 	users := []*User{}
 	for {
 		select {
