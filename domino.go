@@ -168,6 +168,18 @@ func StringField(name string) String {
 	}
 }
 
+/*StringField ... A constructor for a string dynamo field*/
+func BoolField(name string) Bool {
+	return Bool{
+		dynamoValueField{
+			dynamoField{
+				name:  name,
+				_type: dBOOL,
+			},
+		},
+	}
+}
+
 /*BinaryField ... A constructor for a binary dynamo field*/
 func BinaryField(name string) Binary {
 	return Binary{
