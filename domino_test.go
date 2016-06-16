@@ -1,16 +1,17 @@
 package domino
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/stretchr/testify/assert"
 	"net/http"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/stretchr/testify/assert"
 )
 
 const localDynamoHost = "http://127.0.0.1:8080"
@@ -322,13 +323,13 @@ func TestDynamoQuery(t *testing.T) {
 			&p,
 		).
 		SetLimit(limit).
+		SetPageSize(10).
 		SetScanForward(true)
 
 	items, err = q.ExecuteWith(db, &User{})
 
 	assert.Nil(t, err)
 	assert.Equal(t, limit, len(items))
-
 }
 
 func TestDynamoStreamQuery(t *testing.T) {

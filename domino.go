@@ -2,10 +2,11 @@ package domino
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"time"
 )
 
 /*DynamoDBIFace is the interface to the underlying aws dynamo db api*/
@@ -707,11 +708,18 @@ func (d *update) ExecuteWith(dynamo DynamoDBIFace) error {
 /***************************************************************************************/
 /********************************************** Query **********************************/
 /***************************************************************************************/
-type query dynamodb.QueryInput
+type query struct {
+	*dynamodb.QueryInput
+	PageSize *int64
+}
 
 /*Query represents dynamo batch get item call*/
 func (table DynamoTable) Query(partitionKeyCondition keyCondition, rangeKeyCondition *keyCondition) *query {
-	q := query(dynamodb.QueryInput{})
+	var input dynamodb.QueryInput
+	q := query{
+		QueryInput: &input,
+	}
+
 	var e Expression
 	if rangeKeyCondition != nil {
 		e = And(partitionKeyCondition, *rangeKeyCondition)
@@ -749,6 +757,12 @@ func (d *query) SetLimit(limit int) *query {
 	return d
 }
 
+func (d *query) SetPageSize(pageSize int) *query {
+	ps := int64(pageSize)
+	d.PageSize = &ps
+	return d
+}
+
 func (d *query) SetScanForward(forward bool) *query {
 	d.ScanIndexForward = &forward
 	return d
@@ -775,7 +789,11 @@ func (d *query) SetGlobalIndex(idx GlobalSecondaryIndex) *query {
 }
 
 func (d *query) Build() *dynamodb.QueryInput {
-	r := dynamodb.QueryInput(*d)
+	r := dynamodb.QueryInput(*d.QueryInput)
+	if d.PageSize != nil {
+		r.Limit = d.PageSize
+	}
+
 	return &r
 }
 
@@ -835,8 +853,8 @@ func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (items
 STREAM:
 	for {
 		select {
-		case item := <-c:
-			if item == nil {
+		case item, ok := <-c:
+			if !ok {
 				break STREAM
 			}
 			items = append(items, item)
