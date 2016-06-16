@@ -710,7 +710,7 @@ func (d *update) ExecuteWith(dynamo DynamoDBIFace) error {
 /***************************************************************************************/
 type query struct {
 	*dynamodb.QueryInput
-	PageSize *int64
+	pageSize *int64
 }
 
 /*Query represents dynamo batch get item call*/
@@ -759,7 +759,7 @@ func (d *query) SetLimit(limit int) *query {
 
 func (d *query) SetPageSize(pageSize int) *query {
 	ps := int64(pageSize)
-	d.PageSize = &ps
+	d.pageSize = &ps
 	return d
 }
 
@@ -790,8 +790,8 @@ func (d *query) SetGlobalIndex(idx GlobalSecondaryIndex) *query {
 
 func (d *query) Build() *dynamodb.QueryInput {
 	r := dynamodb.QueryInput(*d.QueryInput)
-	if d.PageSize != nil {
-		r.Limit = d.PageSize
+	if d.pageSize != nil {
+		r.Limit = d.pageSize
 	}
 
 	return &r
@@ -872,7 +872,7 @@ STREAM:
 /***************************************************************************************/
 type scan struct {
 	*dynamodb.ScanInput
-	PageSize *int64
+	pageSize *int64
 }
 
 /*Scan represents dynamo scan item call*/
@@ -908,7 +908,7 @@ func (d *scan) SetLimit(limit int) *scan {
 
 func (d *scan) SetPageSize(pageSize int) *scan {
 	ps := int64(pageSize)
-	d.PageSize = &ps
+	d.pageSize = &ps
 	return d
 }
 
@@ -934,8 +934,8 @@ func (d *scan) SetGlobalIndex(idx GlobalSecondaryIndex) *scan {
 
 func (d *scan) Build() *dynamodb.ScanInput {
 	r := dynamodb.ScanInput(*d.ScanInput)
-	if d.PageSize != nil {
-		r.Limit = d.PageSize
+	if d.pageSize != nil {
+		r.Limit = d.pageSize
 	}
 	return &r
 }
