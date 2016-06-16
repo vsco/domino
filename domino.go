@@ -870,11 +870,18 @@ STREAM:
 /***************************************************************************************/
 /********************************************** Scan **********************************/
 /***************************************************************************************/
-type scan dynamodb.ScanInput
+type scan struct {
+	*dynamodb.ScanInput
+	PageSize *int64
+}
 
 /*Scan represents dynamo scan item call*/
 func (table DynamoTable) Scan() *scan {
-	q := scan(dynamodb.ScanInput{})
+	var input dynamodb.ScanInput
+	q := scan{
+		ScanInput: &input,
+	}
+
 	q.TableName = &table.Name
 	return &q
 }
@@ -899,6 +906,12 @@ func (d *scan) SetLimit(limit int) *scan {
 	return d
 }
 
+func (d *scan) SetPageSize(pageSize int) *scan {
+	ps := int64(pageSize)
+	d.PageSize = &ps
+	return d
+}
+
 func (d *scan) SetFilterExpression(c Expression) *scan {
 	s, m, _ := c.construct(1, true)
 	d.FilterExpression = &s
@@ -920,7 +933,10 @@ func (d *scan) SetGlobalIndex(idx GlobalSecondaryIndex) *scan {
 }
 
 func (d *scan) Build() *dynamodb.ScanInput {
-	r := dynamodb.ScanInput(*d)
+	r := dynamodb.ScanInput(*d.ScanInput)
+	if d.PageSize != nil {
+		r.Limit = d.PageSize
+	}
 	return &r
 }
 
