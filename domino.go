@@ -2,10 +2,11 @@ package domino
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"time"
 )
 
 /*DynamoDBIFace is the interface to the underlying aws dynamo db api*/
@@ -707,11 +708,18 @@ func (d *update) ExecuteWith(dynamo DynamoDBIFace) error {
 /***************************************************************************************/
 /********************************************** Query **********************************/
 /***************************************************************************************/
-type query dynamodb.QueryInput
+type query struct {
+	*dynamodb.QueryInput
+	pageSize *int64
+}
 
 /*Query represents dynamo batch get item call*/
 func (table DynamoTable) Query(partitionKeyCondition keyCondition, rangeKeyCondition *keyCondition) *query {
-	q := query(dynamodb.QueryInput{})
+	var input dynamodb.QueryInput
+	q := query{
+		QueryInput: &input,
+	}
+
 	var e Expression
 	if rangeKeyCondition != nil {
 		e = And(partitionKeyCondition, *rangeKeyCondition)
@@ -749,6 +757,12 @@ func (d *query) SetLimit(limit int) *query {
 	return d
 }
 
+func (d *query) SetPageSize(pageSize int) *query {
+	ps := int64(pageSize)
+	d.pageSize = &ps
+	return d
+}
+
 func (d *query) SetScanForward(forward bool) *query {
 	d.ScanIndexForward = &forward
 	return d
@@ -775,7 +789,11 @@ func (d *query) SetGlobalIndex(idx GlobalSecondaryIndex) *query {
 }
 
 func (d *query) Build() *dynamodb.QueryInput {
-	r := dynamodb.QueryInput(*d)
+	r := dynamodb.QueryInput(*d.QueryInput)
+	if d.pageSize != nil {
+		r.Limit = d.pageSize
+	}
+
 	return &r
 }
 
@@ -835,8 +853,8 @@ func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (items
 STREAM:
 	for {
 		select {
-		case item := <-c:
-			if item == nil {
+		case item, ok := <-c:
+			if !ok {
 				break STREAM
 			}
 			items = append(items, item)
@@ -852,11 +870,18 @@ STREAM:
 /***************************************************************************************/
 /********************************************** Scan **********************************/
 /***************************************************************************************/
-type scan dynamodb.ScanInput
+type scan struct {
+	*dynamodb.ScanInput
+	pageSize *int64
+}
 
 /*Scan represents dynamo scan item call*/
 func (table DynamoTable) Scan() *scan {
-	q := scan(dynamodb.ScanInput{})
+	var input dynamodb.ScanInput
+	q := scan{
+		ScanInput: &input,
+	}
+
 	q.TableName = &table.Name
 	return &q
 }
@@ -881,6 +906,12 @@ func (d *scan) SetLimit(limit int) *scan {
 	return d
 }
 
+func (d *scan) SetPageSize(pageSize int) *scan {
+	ps := int64(pageSize)
+	d.pageSize = &ps
+	return d
+}
+
 func (d *scan) SetFilterExpression(c Expression) *scan {
 	s, m, _ := c.construct(1, true)
 	d.FilterExpression = &s
@@ -902,7 +933,10 @@ func (d *scan) SetGlobalIndex(idx GlobalSecondaryIndex) *scan {
 }
 
 func (d *scan) Build() *dynamodb.ScanInput {
-	r := dynamodb.ScanInput(*d)
+	r := dynamodb.ScanInput(*d.ScanInput)
+	if d.pageSize != nil {
+		r.Limit = d.pageSize
+	}
 	return &r
 }
 
