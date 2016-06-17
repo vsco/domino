@@ -9,7 +9,6 @@ install:
   - script/bootstrap
   - npm install -g dynalite
 script:
-  - script/startdb
   - script/test
 notifications:
   email: false

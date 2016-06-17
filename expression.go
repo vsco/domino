@@ -67,7 +67,7 @@ func (e expressionGroup) construct(counter uint, topLevel bool) (string, map[str
 		counter = newCounter
 	}
 
-	if !topLevel {
+	if !topLevel && len(a) > 1 {
 		r = fmt.Sprintf("(%v)", r)
 	}
 
