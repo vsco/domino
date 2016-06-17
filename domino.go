@@ -805,7 +805,7 @@ func (d *query) Build() *dynamodb.QueryInput {
  ** 			returned channel.
  **
  */
-func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
+func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem func() interface{}) (c chan interface{}, e chan error) {
 
 	c = make(chan interface{})
 	e = make(chan error)
@@ -826,14 +826,15 @@ func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 		}
 
 		for _, item := range out.Items {
-			err = dynamodbattribute.UnmarshalMap(item, &nextItem)
+			result := nextItem()
+			err = dynamodbattribute.UnmarshalMap(item, result)
 
 			if err != nil {
 				e <- handleAwsErr(err)
 				return
 			}
 			count++
-			c <- nextItem
+			c <- result
 		}
 
 		if out.LastEvaluatedKey != nil {
@@ -846,7 +847,7 @@ func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 	return
 }
 
-func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (items []interface{}, err error) {
+func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem func() interface{}) (items []interface{}, err error) {
 	c, e := d.StreamWith(dynamodb, nextItem)
 	items = []interface{}{}
 
