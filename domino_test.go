@@ -1,6 +1,7 @@
 package domino
 
 import (
+	// "fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -362,7 +363,7 @@ func TestDynamoStreamQuery(t *testing.T) {
 
 	assert.Empty(t, ui)
 
-	limit := 100
+	limit := 10
 	p := table.passwordField.BeginsWith("password")
 	q := table.
 		Query(
@@ -373,20 +374,12 @@ func TestDynamoStreamQuery(t *testing.T) {
 		SetScanForward(true)
 
 	users := []User{}
-	channel, errChan := q.StreamWith(db, &User{})
+	channel := make(chan *User)
 
-SELECT:
-	for {
-		select {
-		case u := <-channel:
-			if u != nil {
-				users = append(users, *u.(*User))
-			} else {
-				break SELECT
-			}
-		case err = <-errChan:
-			break SELECT
-		}
+	_ = q.StreamWithChannel(db, channel)
+
+	for u := range channel {
+		users = append(users, *u)
 	}
 
 	assert.Nil(t, err)

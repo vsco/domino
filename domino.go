@@ -2,11 +2,11 @@ package domino
 
 import (
 	"fmt"
-	"time"
-
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"reflect"
+	"time"
 )
 
 /*DynamoDBIFace is the interface to the underlying aws dynamo db api*/
@@ -800,12 +800,14 @@ func (d *query) Build() *dynamodb.QueryInput {
 /**
  ** ExecuteWith ... Execute a dynamo BatchGetItem call with a passed in dynamodb instance and next item pointer
  ** dynamo - The underlying dynamodb api
- ** nextItem - The item pointer function, which is called on each new object returned from dynamodb. The function SHOULD NOT
+ ** nextItem - The item pointer which is copied and hydrated on every item. The function SHOULD NOT
  ** 		   store each item. It should simply return an empty struct pointer. Each of which is hydrated and pused on the
  ** 			returned channel.
  **
  */
-func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem func() interface{}) (c chan interface{}, e chan error) {
+func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
+	v := reflect.ValueOf(nextItem)
+	t := reflect.Indirect(v).Type()
 
 	c = make(chan interface{})
 	e = make(chan error)
@@ -826,7 +828,7 @@ func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem func() interface{}) 
 		}
 
 		for _, item := range out.Items {
-			result := nextItem()
+			result := reflect.New(t).Interface()
 			err = dynamodbattribute.UnmarshalMap(item, result)
 
 			if err != nil {
@@ -835,6 +837,9 @@ func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem func() interface{}) 
 			}
 			count++
 			c <- result
+			if d.Limit != nil && count >= *d.Limit {
+				return
+			}
 		}
 
 		if out.LastEvaluatedKey != nil {
@@ -847,7 +852,64 @@ func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem func() interface{}) 
 	return
 }
 
-func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem func() interface{}) (items []interface{}, err error) {
+func (d *query) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (errChan chan error) {
+	t := reflect.TypeOf(channel).Elem()
+	isPtr := t.Kind() == reflect.Ptr
+	if isPtr {
+		t = t.Elem()
+	}
+	vc := reflect.ValueOf(channel)
+	errChan = make(chan error)
+
+	go func() {
+		defer vc.Close()
+		defer close(errChan)
+
+		var count int64
+	Execute:
+		if d.Limit != nil && count >= *d.Limit {
+			return
+		}
+		out, err := dynamodb.Query(d.Build())
+		if err != nil {
+			errChan <- handleAwsErr(err)
+			return
+		}
+
+		for _, item := range out.Items {
+			result := reflect.New(t).Interface()
+			err = dynamodbattribute.UnmarshalMap(item, result)
+
+			if err != nil {
+				errChan <- handleAwsErr(err)
+				return
+			}
+
+			value := reflect.ValueOf(result)
+
+			count++
+			if isPtr {
+				vc.Send(value)
+			} else {
+				vc.Send(reflect.Indirect(value))
+			}
+
+			if d.Limit != nil && count >= *d.Limit {
+				return
+			}
+		}
+
+		if out.LastEvaluatedKey != nil {
+			d.ExclusiveStartKey = out.LastEvaluatedKey
+			goto Execute
+		}
+		return
+	}()
+
+	return
+}
+
+func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (items []interface{}, err error) {
 	c, e := d.StreamWith(dynamodb, nextItem)
 	items = []interface{}{}
 
@@ -858,6 +920,7 @@ STREAM:
 			if !ok {
 				break STREAM
 			}
+
 			items = append(items, item)
 
 		case err = <-e:
@@ -978,6 +1041,59 @@ func (d *scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 			}
 			count++
 			c <- nextItem
+		}
+
+		if out.LastEvaluatedKey != nil {
+			d.ExclusiveStartKey = out.LastEvaluatedKey
+			goto Execute
+		}
+		return
+	}()
+
+	return
+}
+
+func (d *scan) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (errChan chan error) {
+	t := reflect.TypeOf(channel).Elem()
+	isPtr := t.Kind() == reflect.Ptr
+	if isPtr {
+		t = t.Elem()
+	}
+	vc := reflect.ValueOf(channel)
+	errChan = make(chan error)
+
+	go func() {
+		defer vc.Close()
+		defer close(errChan)
+
+		var count int64
+	Execute:
+		if d.Limit != nil && count >= *d.Limit {
+			return
+		}
+		out, err := dynamodb.Scan(d.Build())
+		if err != nil {
+			errChan <- handleAwsErr(err)
+			return
+		}
+
+		for _, item := range out.Items {
+			nextItem := reflect.New(t).Interface()
+			err = dynamodbattribute.UnmarshalMap(item, nextItem)
+			value := reflect.ValueOf(nextItem)
+			if err != nil {
+				errChan <- handleAwsErr(err)
+				return
+			}
+			count++
+			if isPtr {
+				vc.Send(value)
+			} else {
+				vc.Send(reflect.Indirect(value))
+			}
+			if d.Limit != nil && count >= *d.Limit {
+				return
+			}
 		}
 
 		if out.LastEvaluatedKey != nil {
