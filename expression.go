@@ -67,7 +67,7 @@ func (e expressionGroup) construct(counter uint, topLevel bool) (string, map[str
 		counter = newCounter
 	}
 
-	if !topLevel && len(a) > 1 {
+	if !topLevel {
 		r = fmt.Sprintf("(%v)", r)
 	}
 
@@ -199,7 +199,7 @@ func (p *dynamoField) operation(op string, a interface{}) keyCondition {
 	return keyCondition{
 		condition{
 			exprF: func(placeholders []string) string {
-				return fmt.Sprintf("("+p.name+" "+op+" %v)", placeholders[0])
+				return fmt.Sprintf("%s %s %v", p.name, op, placeholders[0])
 			},
 			args: []interface{}{a},
 		},
