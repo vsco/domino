@@ -146,7 +146,7 @@ func (c condition) String() string {
 func (p *dynamoField) In(elems ...interface{}) condition {
 	return condition{
 		exprF: func(placeholders []string) string {
-			return p.name + " in (" + strings.Join(placeholders, ",") + ")"
+			return fmt.Sprintf("(%s in (%s))", p.name, strings.Join(placeholders, ","))
 		},
 		args: elems,
 	}
