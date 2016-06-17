@@ -146,7 +146,7 @@ func (c condition) String() string {
 func (p *dynamoField) In(elems ...interface{}) condition {
 	return condition{
 		exprF: func(placeholders []string) string {
-			return p.name + " in (" + strings.Join(placeholders, ",") + ")"
+			return fmt.Sprintf("(%s in (%s))", p.name, strings.Join(placeholders, ","))
 		},
 		args: elems,
 	}
@@ -199,7 +199,7 @@ func (p *dynamoField) operation(op string, a interface{}) keyCondition {
 	return keyCondition{
 		condition{
 			exprF: func(placeholders []string) string {
-				return fmt.Sprintf("("+p.name+" "+op+" %v)", placeholders[0])
+				return fmt.Sprintf("%s %s %v", p.name, op, placeholders[0])
 			},
 			args: []interface{}{a},
 		},
