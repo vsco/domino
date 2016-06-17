@@ -26,3 +26,4 @@ release
 
 # Dynamo Local Instance Files
 shared-local-instance.db
+script/dyna.pid

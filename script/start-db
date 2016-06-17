@@ -1,0 +1,5 @@
+#!/bin/bash
+script/stop-db
+echo "Starting dynalite"
+dynalite --port 8080 --createTableMs 0 --deleteTableMs 0 --updateTableMs 0 &
+echo $! > script/dyna.pid
