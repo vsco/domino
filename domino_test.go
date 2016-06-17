@@ -266,10 +266,7 @@ func TestExpressions(t *testing.T) {
 	expectedFilter := "begins_with(registrationDate,:t_1) OR contains(lastName,:25_2) OR (NOT contains(registrationDate,:t_3)) OR (size(registrationDate) <=:25_4 AND size(firstName) >=:25_5) OR registrationDate = :test_6 OR registrationDate <= :test_7 OR (registrationDate between :0_8 and :1_9) OR (registrationDate in (:0_10,:1_11))"
 	assert.Equal(t, expectedFilter, *q.Build().FilterExpression)
 
-	channel, errChan := q.StreamWith(db, func() interface{} {
-		u := User{}
-		return &u
-	})
+	channel, errChan := q.StreamWith(db, User{})
 
 	var wg sync.WaitGroup
 	wg.Add(1)
