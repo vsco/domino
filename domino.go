@@ -908,7 +908,7 @@ func (d *query) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (
 				vc.Send(reflect.Indirect(value))
 			}
 
-			for handler := range d.capacityHandlers {
+			for _, handler := range d.capacityHandlers {
 				handler(out.ConsumedCapacity)
 			}
 
