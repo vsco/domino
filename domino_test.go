@@ -360,8 +360,12 @@ func TestDynamoStreamQuery(t *testing.T) {
 	})
 
 	assert.Nil(t, err)
-
 	assert.Empty(t, ui)
+
+	set := false
+	f := func(c *dynamodb.ConsumedCapacity) {
+		set = true
+	}
 
 	limit := 10
 	p := table.passwordField.BeginsWith("password")
@@ -369,9 +373,7 @@ func TestDynamoStreamQuery(t *testing.T) {
 		Query(
 			table.emailField.Equals("naveen@email.com"),
 			&p,
-		).
-		SetLimit(limit).
-		SetScanForward(true)
+		).SetLimit(limit).WithConsumedCapacityHandler(f).SetScanForward(true)
 
 	users := []User{}
 	channel := make(chan *User)
@@ -381,7 +383,7 @@ func TestDynamoStreamQuery(t *testing.T) {
 	for u := range channel {
 		users = append(users, *u)
 	}
-
+	assert.True(t, set)
 	assert.Nil(t, err)
 	assert.Equal(t, limit, len(users))
 }
