@@ -846,7 +846,7 @@ func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 			count++
 			c <- result
 
-			for handler := range d.capacityHandlers {
+			for _, handler := range d.capacityHandlers {
 				handler(out.ConsumedCapacity)
 			}
 
