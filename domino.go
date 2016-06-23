@@ -2,12 +2,12 @@ package domino
 
 import (
 	"fmt"
-	"reflect"
-	"time"
-
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"reflect"
+	"time"
 )
 
 /*DynamoDBIFace is the interface to the underlying aws dynamo db api*/
@@ -711,7 +711,8 @@ func (d *update) ExecuteWith(dynamo DynamoDBIFace) error {
 /***************************************************************************************/
 type query struct {
 	*dynamodb.QueryInput
-	pageSize *int64
+	pageSize         *int64
+	capacityHandlers []func(*dynamodb.ConsumedCapacity)
 }
 
 /*Query represents dynamo batch get item call*/
@@ -766,6 +767,12 @@ func (d *query) SetPageSize(pageSize int) *query {
 
 func (d *query) SetScanForward(forward bool) *query {
 	d.ScanIndexForward = &forward
+	return d
+}
+
+func (d *query) WithConsumedCapacityHandler(f func(*dynamodb.ConsumedCapacity)) *query {
+	d.ReturnConsumedCapacity = aws.String("INDEXES")
+	d.capacityHandlers = append(d.capacityHandlers, f)
 	return d
 }
 
@@ -838,6 +845,11 @@ func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 			}
 			count++
 			c <- result
+
+			for _, handler := range d.capacityHandlers {
+				handler(out.ConsumedCapacity)
+			}
+
 			if d.Limit != nil && count >= *d.Limit {
 				return
 			}
@@ -847,6 +859,7 @@ func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 			d.ExclusiveStartKey = out.LastEvaluatedKey
 			goto Execute
 		}
+
 		return
 	}()
 
@@ -893,6 +906,10 @@ func (d *query) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (
 				vc.Send(value)
 			} else {
 				vc.Send(reflect.Indirect(value))
+			}
+
+			for _, handler := range d.capacityHandlers {
+				handler(out.ConsumedCapacity)
 			}
 
 			if d.Limit != nil && count >= *d.Limit {
