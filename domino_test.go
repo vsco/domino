@@ -32,7 +32,6 @@ type UserTable struct {
 	lastNameField    String
 
 	registrationDateIndex LocalSecondaryIndex
-	nameGlobalIndex       GlobalSecondaryIndex
 }
 
 type User struct {
@@ -55,6 +54,15 @@ func NewUserTable() UserTable {
 			Name:         "dev-ore-feed",
 			PartitionKey: pk,
 			RangeKey:     rk,
+			GSIs: map[string]GlobalSecondaryIndex{
+				"name-index": GlobalSecondaryIndex{
+					Name:             "name-index",
+					PartitionKey:     firstName,
+					RangeKey:         lastName,
+					ProjectionType:   "INCLUDE",
+					NonKeyAttributes: []DynamoFieldIFace{lastName, reg},
+				},
+			},
 		},
 		pk,  //email
 		rk,  //password
@@ -66,7 +74,6 @@ func NewUserTable() UserTable {
 		firstName,
 		lastName,
 		LocalSecondaryIndex{"registrationDate-index", reg},
-		GlobalSecondaryIndex{"name-index", firstName, lastName, "", nil, 0, 0},
 	}
 }
 

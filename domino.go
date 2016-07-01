@@ -1196,7 +1196,11 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 		pt = aws.String(gsi.ProjectionType)
 		if gsi.ProjectionType == "INCLUDE" {
 			for _, key := range gsi.NonKeyAttributes {
-				d.AttributeDefinitions = append(d.AttributeDefinitions, &dynamodb.AttributeDefinition{AttributeName: aws.String(key.Name()), AttributeType: aws.String(key.Type())})
+				newAttr := &dynamodb.AttributeDefinition{
+					AttributeName: aws.String(key.Name()),
+					AttributeType: aws.String(key.Type()),
+				}
+				d.AttributeDefinitions = append(d.AttributeDefinitions, newAttr)
 				nka = append(nka, aws.String(key.Name()))
 			}
 		}
