@@ -2,12 +2,13 @@ package domino
 
 import (
 	"fmt"
+	"reflect"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"reflect"
-	"time"
 )
 
 /*DynamoDBIFace is the interface to the underlying aws dynamo db api*/
@@ -40,11 +41,12 @@ const (
 /*DynamoTable is a static table definition representing a dynamo table*/
 type DynamoTable struct {
 	Name         string
-	PartitionKey dynamoFieldIFace
-	RangeKey     dynamoFieldIFace //Optional param. If no range key set to EmptyDynamoField()
+	PartitionKey DynamoFieldIFace
+	RangeKey     DynamoFieldIFace //Optional param. If no range key set to EmptyDynamoField()
+	GSIs         map[string]GlobalSecondaryIndex
 }
 
-type dynamoFieldIFace interface {
+type DynamoFieldIFace interface {
 	Name() string
 	Type() string
 	IsEmpty() bool
@@ -245,14 +247,18 @@ func MapField(name string) Map {
 /*LocalSecondaryIndex ... Represents a dynamo local secondary index*/
 type LocalSecondaryIndex struct {
 	Name    string
-	SortKey dynamoFieldIFace
+	SortKey DynamoFieldIFace
 }
 
 /*GlobalSecondaryIndex ... Represents a dynamo global secondary index*/
 type GlobalSecondaryIndex struct {
-	Name         string
-	PartitionKey dynamoFieldIFace
-	RangeKey     dynamoFieldIFace //Optional param. If no range key set to EmptyField
+	Name             string
+	PartitionKey     DynamoFieldIFace
+	RangeKey         DynamoFieldIFace //Optional param. If no range key set to EmptyField
+	ProjectionType   string
+	NonKeyAttributes []DynamoFieldIFace
+	ReadUnits        int64
+	WriteUnits       int64
 }
 
 /*KeyValue ... A Key Value struct for use in GetItem and BatchWriteItem queries*/
@@ -1168,7 +1174,87 @@ func (table DynamoTable) CreateTable() *createTable {
 		AttributeDefinitions:  a,
 	}
 	c := createTable(t)
+
+	// add GSIs
+	if len(table.GSIs) > 0 {
+		for _, gsi := range table.GSIs {
+			c = *c.WithGlobalSecondaryIndex(gsi)
+		}
+	}
+
 	return &c
+}
+
+func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *createTable {
+	// handle projection types and NonKeyAttributes
+	var pt *string
+	var nka []*string
+	if gsi.ProjectionType == "" {
+		pt = aws.String("ALL")
+	} else {
+		// ALL, INCLUDE, KEYS_ONLY
+		pt = aws.String(gsi.ProjectionType)
+		if gsi.ProjectionType == "INCLUDE" {
+			for _, key := range gsi.NonKeyAttributes {
+				d.AttributeDefinitions = append(d.AttributeDefinitions, &dynamodb.AttributeDefinition{AttributeName: aws.String(key.Name()), AttributeType: aws.String(key.Type())})
+				nka = append(nka, aws.String(key.Name()))
+			}
+		}
+	}
+
+	// setup default provisioning
+	var gsir *int64
+	var gsiw *int64
+
+	if gsi.ReadUnits != 0 {
+		gsir = &gsi.ReadUnits
+	} else {
+		gsir = aws.Int64(10)
+	}
+	if gsi.WriteUnits != 0 {
+		gsiw = &gsi.WriteUnits
+	} else {
+		gsiw = aws.Int64(10)
+	}
+
+	// populate missing AttributeDefinitions
+	pk := &dynamodb.AttributeDefinition{
+		AttributeName: aws.String(gsi.PartitionKey.Name()),
+		AttributeType: aws.String(gsi.PartitionKey.Type()),
+	}
+	rk := &dynamodb.AttributeDefinition{
+		AttributeName: aws.String(gsi.RangeKey.Name()),
+		AttributeType: aws.String(gsi.RangeKey.Type()),
+	}
+	d.AttributeDefinitions = append(d.AttributeDefinitions, pk)
+	d.AttributeDefinitions = append(d.AttributeDefinitions, rk)
+
+	// create gsi obj
+	dynamoGsi := dynamodb.GlobalSecondaryIndex{
+		IndexName: &gsi.Name,
+		KeySchema: []*dynamodb.KeySchemaElement{
+			{
+				AttributeName: aws.String(gsi.PartitionKey.Name()),
+				KeyType:       aws.String("HASH"),
+			},
+			{
+				AttributeName: aws.String(gsi.RangeKey.Name()),
+				KeyType:       aws.String("RANGE"),
+			},
+		},
+		Projection: &dynamodb.Projection{
+			ProjectionType:   pt,
+			NonKeyAttributes: nka,
+		},
+		ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
+			ReadCapacityUnits:  gsir,
+			WriteCapacityUnits: gsiw,
+		},
+	}
+
+	// append gsi to *createTable
+	d.GlobalSecondaryIndexes = append(d.GlobalSecondaryIndexes, &dynamoGsi)
+	return d
 }
 
 func (d *createTable) Build() *dynamodb.CreateTableInput {

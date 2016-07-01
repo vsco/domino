@@ -66,7 +66,7 @@ func NewUserTable() UserTable {
 		firstName,
 		lastName,
 		LocalSecondaryIndex{"registrationDate-index", reg},
-		GlobalSecondaryIndex{"name-index", firstName, lastName},
+		GlobalSecondaryIndex{"name-index", firstName, lastName, "", nil, 0, 0},
 	}
 }
 
