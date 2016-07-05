@@ -43,8 +43,8 @@ type DynamoTable struct {
 	Name                   string
 	PartitionKey           DynamoFieldIFace
 	RangeKey               DynamoFieldIFace //Optional param. If no range key set to EmptyDynamoField()
-	GlobalSecondaryIndexes map[string]GlobalSecondaryIndex
-	LocalSecondaryIndexes  map[string]LocalSecondaryIndex
+	GlobalSecondaryIndexes []GlobalSecondaryIndex
+	LocalSecondaryIndexes  []LocalSecondaryIndex
 }
 
 type DynamoFieldIFace interface {

@@ -52,8 +52,8 @@ func NewUserTable() UserTable {
 			Name:         "dev-ore-feed",
 			PartitionKey: pk,
 			RangeKey:     rk,
-			GlobalSecondaryIndexes: map[string]GlobalSecondaryIndex{
-				"name-index": GlobalSecondaryIndex{
+			GlobalSecondaryIndexes: []GlobalSecondaryIndex{
+				GlobalSecondaryIndex{
 					Name:             "name-index",
 					PartitionKey:     firstName,
 					RangeKey:         lastName,
@@ -61,8 +61,8 @@ func NewUserTable() UserTable {
 					NonKeyAttributes: []DynamoFieldIFace{lastName, reg},
 				},
 			},
-			LocalSecondaryIndexes: map[string]LocalSecondaryIndex{
-				"registrationDate-index": LocalSecondaryIndex{
+			LocalSecondaryIndexes: []LocalSecondaryIndex{
+				LocalSecondaryIndex{
 					Name:         "registrationDate-index",
 					PartitionKey: pk,
 					SortKey:      reg,
