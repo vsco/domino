@@ -50,11 +50,31 @@ func NewUserTable() UserTable {
 	firstName := StringField("firstName")
 	lastName := StringField("lastName")
 	reg := NumericField("registrationDate")
+	nameGlobalIndex := GlobalSecondaryIndex{
+		Name:             "name-index",
+		PartitionKey:     firstName,
+		RangeKey:         lastName,
+		ProjectionType:   ProjectionTypeINCLUDE,
+		NonKeyAttributes: []DynamoFieldIFace{lastName, reg},
+	}
+
+	registrationDateIndex := LocalSecondaryIndex{
+		Name:         "registrationDate-index",
+		PartitionKey: pk,
+		SortKey:      reg,
+	}
+
 	return UserTable{
 		DynamoTable{
 			Name:         "dev-ore-feed",
 			PartitionKey: pk,
 			RangeKey:     rk,
+			GlobalSecondaryIndexes: []GlobalSecondaryIndex{
+				nameGlobalIndex,
+			},
+			LocalSecondaryIndexes: []LocalSecondaryIndex{
+				registrationDateIndex,
+			},
 		},
 		pk,  //email
 		rk,  //password
@@ -65,8 +85,8 @@ func NewUserTable() UserTable {
 		MapField("preferences"),
 		firstName,
 		lastName,
-		LocalSecondaryIndex{"registrationDate-index", reg},
-		GlobalSecondaryIndex{"name-index", firstName, lastName},
+		registrationDateIndex,
+		nameGlobalIndex,
 	}
 }
 
