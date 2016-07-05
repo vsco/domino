@@ -54,7 +54,7 @@ func NewUserTable() UserTable {
 			Name:         "dev-ore-feed",
 			PartitionKey: pk,
 			RangeKey:     rk,
-			GSIs: map[string]GlobalSecondaryIndex{
+			GlobalSecondaryIndexes: map[string]GlobalSecondaryIndex{
 				"name-index": GlobalSecondaryIndex{
 					Name:             "name-index",
 					PartitionKey:     firstName,

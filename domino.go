@@ -40,10 +40,10 @@ const (
 
 /*DynamoTable is a static table definition representing a dynamo table*/
 type DynamoTable struct {
-	Name         string
-	PartitionKey DynamoFieldIFace
-	RangeKey     DynamoFieldIFace //Optional param. If no range key set to EmptyDynamoField()
-	GSIs         map[string]GlobalSecondaryIndex
+	Name                   string
+	PartitionKey           DynamoFieldIFace
+	RangeKey               DynamoFieldIFace //Optional param. If no range key set to EmptyDynamoField()
+	GlobalSecondaryIndexes map[string]GlobalSecondaryIndex
 }
 
 type DynamoFieldIFace interface {
@@ -1175,9 +1175,9 @@ func (table DynamoTable) CreateTable() *createTable {
 	}
 	c := createTable(t)
 
-	// add GSIs
-	if len(table.GSIs) > 0 {
-		for _, gsi := range table.GSIs {
+	// add GlobalSecondaryIndexes
+	if len(table.GlobalSecondaryIndexes) > 0 {
+		for _, gsi := range table.GlobalSecondaryIndexes {
 			c = *c.WithGlobalSecondaryIndex(gsi)
 		}
 	}
