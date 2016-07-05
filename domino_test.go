@@ -30,6 +30,9 @@ type UserTable struct {
 	preferences      Map
 	nameField        String
 	lastNameField    String
+
+	registrationDateIndex LocalSecondaryIndex
+	nameGlobalIndex       GlobalSecondaryIndex
 }
 
 type User struct {
@@ -47,26 +50,30 @@ func NewUserTable() UserTable {
 	firstName := StringField("firstName")
 	lastName := StringField("lastName")
 	reg := NumericField("registrationDate")
+	nameGlobalIndex := GlobalSecondaryIndex{
+		Name:             "name-index",
+		PartitionKey:     firstName,
+		RangeKey:         lastName,
+		ProjectionType:   "INCLUDE",
+		NonKeyAttributes: []DynamoFieldIFace{lastName, reg},
+	}
+
+	registrationDateIndex := LocalSecondaryIndex{
+		Name:         "registrationDate-index",
+		PartitionKey: pk,
+		SortKey:      reg,
+	}
+
 	return UserTable{
 		DynamoTable{
 			Name:         "dev-ore-feed",
 			PartitionKey: pk,
 			RangeKey:     rk,
 			GlobalSecondaryIndexes: []GlobalSecondaryIndex{
-				GlobalSecondaryIndex{
-					Name:             "name-index",
-					PartitionKey:     firstName,
-					RangeKey:         lastName,
-					ProjectionType:   "INCLUDE",
-					NonKeyAttributes: []DynamoFieldIFace{lastName, reg},
-				},
+				nameGlobalIndex,
 			},
 			LocalSecondaryIndexes: []LocalSecondaryIndex{
-				LocalSecondaryIndex{
-					Name:         "registrationDate-index",
-					PartitionKey: pk,
-					SortKey:      reg,
-				},
+				registrationDateIndex,
 			},
 		},
 		pk,  //email
@@ -78,6 +85,8 @@ func NewUserTable() UserTable {
 		MapField("preferences"),
 		firstName,
 		lastName,
+		registrationDateIndex,
+		nameGlobalIndex,
 	}
 }
 
