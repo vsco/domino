@@ -54,7 +54,7 @@ func NewUserTable() UserTable {
 		Name:             "name-index",
 		PartitionKey:     firstName,
 		RangeKey:         lastName,
-		ProjectionType:   "INCLUDE",
+		ProjectionType:   ProjectionTypeINCLUDE,
 		NonKeyAttributes: []DynamoFieldIFace{lastName, reg},
 	}
 

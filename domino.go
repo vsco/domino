@@ -38,6 +38,12 @@ const (
 	dM    = "M"
 )
 
+const (
+	ProjectionTypeALL       = "ALL"
+	ProjectionTypeINCLUDE   = "INCLUDE"
+	ProjectionTypeKEYS_ONLY = "KEYS_ONLY"
+)
+
 /*DynamoTable is a static table definition representing a dynamo table*/
 type DynamoTable struct {
 	Name                   string
@@ -1201,11 +1207,11 @@ func (d *createTable) WithLocalSecondaryIndex(lsi LocalSecondaryIndex) *createTa
 	var pt *string
 	var nka []*string
 	if lsi.ProjectionType == "" {
-		pt = aws.String("ALL")
+		pt = aws.String(ProjectionTypeALL)
 	} else {
 		// ALL, INCLUDE, KEYS_ONLY
 		pt = aws.String(lsi.ProjectionType)
-		if lsi.ProjectionType == "INCLUDE" {
+		if lsi.ProjectionType == ProjectionTypeINCLUDE {
 			for _, key := range lsi.NonKeyAttributes {
 				newAttr := &dynamodb.AttributeDefinition{
 					AttributeName: aws.String(key.Name()),
@@ -1258,11 +1264,11 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 	var pt *string
 	var nka []*string
 	if gsi.ProjectionType == "" {
-		pt = aws.String("ALL")
+		pt = aws.String(ProjectionTypeALL)
 	} else {
 		// ALL, INCLUDE, KEYS_ONLY
 		pt = aws.String(gsi.ProjectionType)
-		if gsi.ProjectionType == "INCLUDE" {
+		if gsi.ProjectionType == ProjectionTypeINCLUDE {
 			for _, key := range gsi.NonKeyAttributes {
 				newAttr := &dynamodb.AttributeDefinition{
 					AttributeName: aws.String(key.Name()),
