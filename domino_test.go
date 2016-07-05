@@ -30,8 +30,6 @@ type UserTable struct {
 	preferences      Map
 	nameField        String
 	lastNameField    String
-
-	registrationDateIndex LocalSecondaryIndex
 }
 
 type User struct {
@@ -63,6 +61,13 @@ func NewUserTable() UserTable {
 					NonKeyAttributes: []DynamoFieldIFace{lastName, reg},
 				},
 			},
+			LocalSecondaryIndexes: map[string]LocalSecondaryIndex{
+				"registrationDate-index": LocalSecondaryIndex{
+					Name:         "registrationDate-index",
+					PartitionKey: pk,
+					SortKey:      reg,
+				},
+			},
 		},
 		pk,  //email
 		rk,  //password
@@ -73,7 +78,6 @@ func NewUserTable() UserTable {
 		MapField("preferences"),
 		firstName,
 		lastName,
-		LocalSecondaryIndex{"registrationDate-index", reg},
 	}
 }
 

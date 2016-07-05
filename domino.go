@@ -44,6 +44,7 @@ type DynamoTable struct {
 	PartitionKey           DynamoFieldIFace
 	RangeKey               DynamoFieldIFace //Optional param. If no range key set to EmptyDynamoField()
 	GlobalSecondaryIndexes map[string]GlobalSecondaryIndex
+	LocalSecondaryIndexes  map[string]LocalSecondaryIndex
 }
 
 type DynamoFieldIFace interface {
@@ -246,8 +247,11 @@ func MapField(name string) Map {
 
 /*LocalSecondaryIndex ... Represents a dynamo local secondary index*/
 type LocalSecondaryIndex struct {
-	Name    string
-	SortKey DynamoFieldIFace
+	Name             string
+	PartitionKey     DynamoFieldIFace
+	SortKey          DynamoFieldIFace
+	ProjectionType   string
+	NonKeyAttributes []DynamoFieldIFace
 }
 
 /*GlobalSecondaryIndex ... Represents a dynamo global secondary index*/
@@ -1182,7 +1186,71 @@ func (table DynamoTable) CreateTable() *createTable {
 		}
 	}
 
+	// add LocalSecondaryIndexes
+	if len(table.LocalSecondaryIndexes) > 0 {
+		for _, lsi := range table.LocalSecondaryIndexes {
+			c = *c.WithLocalSecondaryIndex(lsi)
+		}
+	}
+
 	return &c
+}
+
+func (d *createTable) WithLocalSecondaryIndex(lsi LocalSecondaryIndex) *createTable {
+	// handle projection types and NonKeyAttributes
+	var pt *string
+	var nka []*string
+	if lsi.ProjectionType == "" {
+		pt = aws.String("ALL")
+	} else {
+		// ALL, INCLUDE, KEYS_ONLY
+		pt = aws.String(lsi.ProjectionType)
+		if lsi.ProjectionType == "INCLUDE" {
+			for _, key := range lsi.NonKeyAttributes {
+				newAttr := &dynamodb.AttributeDefinition{
+					AttributeName: aws.String(key.Name()),
+					AttributeType: aws.String(key.Type()),
+				}
+				d.AttributeDefinitions = append(d.AttributeDefinitions, newAttr)
+				nka = append(nka, aws.String(key.Name()))
+			}
+		}
+	}
+
+	// populate missing AttributeDefinitions
+	pk := &dynamodb.AttributeDefinition{
+		AttributeName: aws.String(lsi.PartitionKey.Name()),
+		AttributeType: aws.String(lsi.PartitionKey.Type()),
+	}
+	rk := &dynamodb.AttributeDefinition{
+		AttributeName: aws.String(lsi.SortKey.Name()),
+		AttributeType: aws.String(lsi.SortKey.Type()),
+	}
+	d.AttributeDefinitions = append(d.AttributeDefinitions, pk)
+	d.AttributeDefinitions = append(d.AttributeDefinitions, rk)
+
+	// create lsi obj
+	dynamoLsi := dynamodb.LocalSecondaryIndex{
+		IndexName: &lsi.Name,
+		KeySchema: []*dynamodb.KeySchemaElement{
+			{
+				AttributeName: aws.String(lsi.PartitionKey.Name()),
+				KeyType:       aws.String("HASH"),
+			},
+			{
+				AttributeName: aws.String(lsi.SortKey.Name()),
+				KeyType:       aws.String("RANGE"),
+			},
+		},
+		Projection: &dynamodb.Projection{
+			ProjectionType:   pt,
+			NonKeyAttributes: nka,
+		},
+	}
+
+	// append lsi to *createTable
+	d.LocalSecondaryIndexes = append(d.LocalSecondaryIndexes, &dynamoLsi)
+	return d
 }
 
 func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *createTable {
