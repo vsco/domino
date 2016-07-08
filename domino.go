@@ -6,6 +6,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	// "log"
 	"reflect"
 	"time"
 )
@@ -37,8 +38,13 @@ const (
 	dM    = "M"
 )
 
+type tableMonitor struct {
+	started bool
+}
+
 /*DynamoTable is a static table definition representing a dynamo table*/
 type DynamoTable struct {
+	tableMonitor
 	Name         string
 	PartitionKey dynamoFieldIFace
 	RangeKey     dynamoFieldIFace //Optional param. If no range key set to EmptyDynamoField()
@@ -285,6 +291,7 @@ func (d *get) SetConsistentRead(c bool) *get {
 
 func (d *get) Build() *dynamodb.GetItemInput {
 	r := dynamodb.GetItemInput(*d)
+	r.ReturnConsumedCapacity = aws.String("INDEXES")
 	return &r
 }
 
@@ -318,7 +325,7 @@ func (d *get) ExecuteWith(dynamo DynamoDBIFace, item interface{}) (r interface{}
 /************************************** BatchGetItem ***********************************/
 /***************************************************************************************/
 type batchGet struct {
-	input *dynamodb.BatchGetItemInput
+	input *[]*dynamodb.BatchGetItemInput
 	/*A set of mutational operations that might error out, i.e. not pure, and therefore not conducive to a fluent dsl*/
 	delayedFunctions []func() error
 }
@@ -326,7 +333,7 @@ type batchGet struct {
 /*BatchGetItem represents dynamo batch get item call*/
 func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 	/*Delay the attribute value construction, until Build time*/
-	input := &dynamodb.BatchGetItemInput{}
+	input := &[]*dynamodb.BatchGetItemInput{}
 	delayed := func() error {
 		k := make(map[string]*dynamodb.KeysAndAttributes)
 		keysAndAttribs := dynamodb.KeysAndAttributes{}
@@ -346,7 +353,21 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 			}
 			keysAndAttribs.Keys = append(keysAndAttribs.Keys, attributes)
 		}
-		(*input).RequestItems = k
+		s := map[string]*dynamodb.KeysAndAttributes{}
+		ss := []map[string]*dynamodb.KeysAndAttributes{s}
+		for t, ka := range k {
+			if len(s) < 100 {
+				s[t] = ka
+			} else {
+				s = map[string]*dynamodb.KeysAndAttributes{t: ka}
+				ss = append(ss, s)
+			}
+		}
+
+		for _, m := range ss {
+			(*input) = append(*input, &dynamodb.BatchGetItemInput{RequestItems: m})
+		}
+
 		return nil
 	}
 
@@ -359,20 +380,25 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 }
 
 func (d *batchGet) SetConsistentRead(c bool) *batchGet {
-	for _, ka := range d.input.RequestItems {
-		(*ka).ConsistentRead = &c
+	for _, bg := range *(d.input) {
+		for _, ka := range bg.RequestItems {
+			(*ka).ConsistentRead = &c
+		}
 	}
 	return d
 }
 
-func (d *batchGet) Build() (input *dynamodb.BatchGetItemInput, err error) {
+func (d *batchGet) Build() (input []*dynamodb.BatchGetItemInput, err error) {
 	for _, function := range d.delayedFunctions {
 		err = function()
 		if err != nil {
 			return
 		}
 	}
-	input = (*dynamodb.BatchGetItemInput)((*d).input)
+	input = *(d.input)
+	for _, i := range input {
+		i.ReturnConsumedCapacity = aws.String("INDEXES")
+	}
 
 	return
 }
@@ -386,30 +412,33 @@ func (d *batchGet) Build() (input *dynamodb.BatchGetItemInput, err error) {
  */
 func (d *batchGet) ExecuteWith(dynamo DynamoDBIFace, nextItem func() interface{}) error {
 
-	retry := 0
 	input, err := d.Build()
-Execute:
 
 	if err != nil {
 		return err
 	}
-	out, err := dynamo.BatchGetItem(input)
+	for _, bg := range input {
+		retry := 0
+	Execute:
 
-	if err != nil {
-		return handleAwsErr(err)
-	}
-	for _, r := range out.Responses {
-		for _, item := range r {
-			err = dynamodbattribute.UnmarshalMap(item, nextItem())
-			if err != nil {
-				return handleAwsErr(err)
+		out, err := dynamo.BatchGetItem(bg)
+
+		if err != nil {
+			return handleAwsErr(err)
+		}
+		for _, r := range out.Responses {
+			for _, item := range r {
+				err = dynamodbattribute.UnmarshalMap(item, nextItem())
+				if err != nil {
+					return handleAwsErr(err)
+				}
 			}
 		}
-	}
-	if out.UnprocessedKeys != nil && len(out.UnprocessedKeys) > 0 {
-		input.RequestItems = out.UnprocessedKeys
-		retry++
-		goto Execute
+		if out.UnprocessedKeys != nil && len(out.UnprocessedKeys) > 0 {
+			bg.RequestItems = out.UnprocessedKeys
+			retry++
+			goto Execute
+		}
 	}
 
 	return nil
