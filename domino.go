@@ -2,13 +2,13 @@ package domino
 
 import (
 	"fmt"
+	"reflect"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	// "log"
-	"reflect"
-	"time"
 )
 
 /*DynamoDBIFace is the interface to the underlying aws dynamo db api*/
@@ -38,19 +38,22 @@ const (
 	dM    = "M"
 )
 
-type tableMonitor struct {
-	started bool
-}
+const (
+	ProjectionTypeALL       = "ALL"
+	ProjectionTypeINCLUDE   = "INCLUDE"
+	ProjectionTypeKEYS_ONLY = "KEYS_ONLY"
+)
 
 /*DynamoTable is a static table definition representing a dynamo table*/
 type DynamoTable struct {
-	tableMonitor
-	Name         string
-	PartitionKey dynamoFieldIFace
-	RangeKey     dynamoFieldIFace //Optional param. If no range key set to EmptyDynamoField()
+	Name                   string
+	PartitionKey           DynamoFieldIFace
+	RangeKey               DynamoFieldIFace //Optional param. If no range key set to EmptyDynamoField()
+	GlobalSecondaryIndexes []GlobalSecondaryIndex
+	LocalSecondaryIndexes  []LocalSecondaryIndex
 }
 
-type dynamoFieldIFace interface {
+type DynamoFieldIFace interface {
 	Name() string
 	Type() string
 	IsEmpty() bool
@@ -250,15 +253,22 @@ func MapField(name string) Map {
 
 /*LocalSecondaryIndex ... Represents a dynamo local secondary index*/
 type LocalSecondaryIndex struct {
-	Name    string
-	SortKey dynamoFieldIFace
+	Name             string
+	PartitionKey     DynamoFieldIFace
+	SortKey          DynamoFieldIFace
+	ProjectionType   string
+	NonKeyAttributes []DynamoFieldIFace
 }
 
 /*GlobalSecondaryIndex ... Represents a dynamo global secondary index*/
 type GlobalSecondaryIndex struct {
-	Name         string
-	PartitionKey dynamoFieldIFace
-	RangeKey     dynamoFieldIFace //Optional param. If no range key set to EmptyField
+	Name             string
+	PartitionKey     DynamoFieldIFace
+	RangeKey         DynamoFieldIFace //Optional param. If no range key set to EmptyField
+	ProjectionType   string
+	NonKeyAttributes []DynamoFieldIFace
+	ReadUnits        int64
+	WriteUnits       int64
 }
 
 /*KeyValue ... A Key Value struct for use in GetItem and BatchWriteItem queries*/
@@ -377,15 +387,6 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 	}
 
 	return &q
-}
-
-func (d *batchGet) SetConsistentRead(c bool) *batchGet {
-	for _, bg := range *(d.input) {
-		for _, ka := range bg.RequestItems {
-			(*ka).ConsistentRead = &c
-		}
-	}
-	return d
 }
 
 func (d *batchGet) Build() (input []*dynamodb.BatchGetItemInput, err error) {
@@ -1197,7 +1198,155 @@ func (table DynamoTable) CreateTable() *createTable {
 		AttributeDefinitions:  a,
 	}
 	c := createTable(t)
+
+	// add GlobalSecondaryIndexes
+	if len(table.GlobalSecondaryIndexes) > 0 {
+		for _, gsi := range table.GlobalSecondaryIndexes {
+			c = *c.WithGlobalSecondaryIndex(gsi)
+		}
+	}
+
+	// add LocalSecondaryIndexes
+	if len(table.LocalSecondaryIndexes) > 0 {
+		for _, lsi := range table.LocalSecondaryIndexes {
+			c = *c.WithLocalSecondaryIndex(lsi)
+		}
+	}
+
 	return &c
+}
+
+func (d *createTable) WithLocalSecondaryIndex(lsi LocalSecondaryIndex) *createTable {
+	// handle projection types and NonKeyAttributes
+	var pt *string
+	var nka []*string
+	if lsi.ProjectionType == "" {
+		pt = aws.String(ProjectionTypeALL)
+	} else {
+		// ALL, INCLUDE, KEYS_ONLY
+		pt = aws.String(lsi.ProjectionType)
+		if lsi.ProjectionType == ProjectionTypeINCLUDE {
+			for _, key := range lsi.NonKeyAttributes {
+				newAttr := &dynamodb.AttributeDefinition{
+					AttributeName: aws.String(key.Name()),
+					AttributeType: aws.String(key.Type()),
+				}
+				d.AttributeDefinitions = append(d.AttributeDefinitions, newAttr)
+				nka = append(nka, aws.String(key.Name()))
+			}
+		}
+	}
+
+	// populate missing AttributeDefinitions
+	pk := &dynamodb.AttributeDefinition{
+		AttributeName: aws.String(lsi.PartitionKey.Name()),
+		AttributeType: aws.String(lsi.PartitionKey.Type()),
+	}
+	rk := &dynamodb.AttributeDefinition{
+		AttributeName: aws.String(lsi.SortKey.Name()),
+		AttributeType: aws.String(lsi.SortKey.Type()),
+	}
+	d.AttributeDefinitions = append(d.AttributeDefinitions, pk)
+	d.AttributeDefinitions = append(d.AttributeDefinitions, rk)
+
+	// create lsi obj
+	dynamoLsi := dynamodb.LocalSecondaryIndex{
+		IndexName: &lsi.Name,
+		KeySchema: []*dynamodb.KeySchemaElement{
+			{
+				AttributeName: aws.String(lsi.PartitionKey.Name()),
+				KeyType:       aws.String("HASH"),
+			},
+			{
+				AttributeName: aws.String(lsi.SortKey.Name()),
+				KeyType:       aws.String("RANGE"),
+			},
+		},
+		Projection: &dynamodb.Projection{
+			ProjectionType:   pt,
+			NonKeyAttributes: nka,
+		},
+	}
+
+	// append lsi to *createTable
+	d.LocalSecondaryIndexes = append(d.LocalSecondaryIndexes, &dynamoLsi)
+	return d
+}
+
+func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *createTable {
+	// handle projection types and NonKeyAttributes
+	var pt *string
+	var nka []*string
+	if gsi.ProjectionType == "" {
+		pt = aws.String(ProjectionTypeALL)
+	} else {
+		// ALL, INCLUDE, KEYS_ONLY
+		pt = aws.String(gsi.ProjectionType)
+		if gsi.ProjectionType == ProjectionTypeINCLUDE {
+			for _, key := range gsi.NonKeyAttributes {
+				newAttr := &dynamodb.AttributeDefinition{
+					AttributeName: aws.String(key.Name()),
+					AttributeType: aws.String(key.Type()),
+				}
+				d.AttributeDefinitions = append(d.AttributeDefinitions, newAttr)
+				nka = append(nka, aws.String(key.Name()))
+			}
+		}
+	}
+
+	// setup default provisioning
+	var gsir *int64
+	var gsiw *int64
+
+	if gsi.ReadUnits != 0 {
+		gsir = &gsi.ReadUnits
+	} else {
+		gsir = aws.Int64(10)
+	}
+	if gsi.WriteUnits != 0 {
+		gsiw = &gsi.WriteUnits
+	} else {
+		gsiw = aws.Int64(10)
+	}
+
+	// populate missing AttributeDefinitions
+	pk := &dynamodb.AttributeDefinition{
+		AttributeName: aws.String(gsi.PartitionKey.Name()),
+		AttributeType: aws.String(gsi.PartitionKey.Type()),
+	}
+	rk := &dynamodb.AttributeDefinition{
+		AttributeName: aws.String(gsi.RangeKey.Name()),
+		AttributeType: aws.String(gsi.RangeKey.Type()),
+	}
+	d.AttributeDefinitions = append(d.AttributeDefinitions, pk)
+	d.AttributeDefinitions = append(d.AttributeDefinitions, rk)
+
+	// create gsi obj
+	dynamoGsi := dynamodb.GlobalSecondaryIndex{
+		IndexName: &gsi.Name,
+		KeySchema: []*dynamodb.KeySchemaElement{
+			{
+				AttributeName: aws.String(gsi.PartitionKey.Name()),
+				KeyType:       aws.String("HASH"),
+			},
+			{
+				AttributeName: aws.String(gsi.RangeKey.Name()),
+				KeyType:       aws.String("RANGE"),
+			},
+		},
+		Projection: &dynamodb.Projection{
+			ProjectionType:   pt,
+			NonKeyAttributes: nka,
+		},
+		ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
+			ReadCapacityUnits:  gsir,
+			WriteCapacityUnits: gsiw,
+		},
+	}
+
+	// append gsi to *createTable
+	d.GlobalSecondaryIndexes = append(d.GlobalSecondaryIndexes, &dynamoGsi)
+	return d
 }
 
 func (d *createTable) Build() *dynamodb.CreateTableInput {
