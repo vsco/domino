@@ -184,6 +184,48 @@ func TestBatchPutItem(t *testing.T) {
 	assert.NotEmpty(t, users)
 }
 
+func TestBatchGetItem(t *testing.T) {
+	table := NewUserTable()
+	db := NewDB()
+	err := table.CreateTable().ExecuteWith(db)
+	defer table.DeleteTable().ExecuteWith(db)
+
+	assert.Nil(t, err)
+
+	u := &User{Email: "bob@email.com", Password: "password"}
+	items := []interface{}{u}
+	kvs := []KeyValue{}
+	for i := 0; i < 200; i++ {
+		items = append(items, &User{Email: "bob@email.com", Password: "password" + strconv.Itoa(i)})
+		kvs = append(kvs, KeyValue{"bob@email.com", "password" + strconv.Itoa(i)})
+	}
+
+	ui := []*User{}
+	w := table.BatchWriteItem().PutItems(items...)
+
+	err = w.ExecuteWith(db, func() interface{} {
+		u := User{}
+		ui = append(ui, &u)
+		return &u
+	})
+
+	assert.Nil(t, err)
+
+	assert.Empty(t, ui)
+
+	g := table.
+		BatchGetItem(kvs...)
+
+	users := []*User{}
+	g.ExecuteWith(db, func() interface{} {
+		user := User{}
+		users = append(users, &user)
+		return &user
+	})
+
+	assert.Equal(t, len(users), 200)
+}
+
 func TestUpdateItem(t *testing.T) {
 	table := NewUserTable()
 	db := NewDB()
