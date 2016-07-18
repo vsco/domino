@@ -366,9 +366,12 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 		s := map[string]*dynamodb.KeysAndAttributes{}
 		ss := []map[string]*dynamodb.KeysAndAttributes{s}
 		for t, ka := range k {
+			fmt.Println(len(k))
 			if len(s) < 100 {
 				s[t] = ka
+				fmt.Println(len(s))
 			} else {
+				fmt.Println(len(s))
 				s = map[string]*dynamodb.KeysAndAttributes{t: ka}
 				ss = append(ss, s)
 			}

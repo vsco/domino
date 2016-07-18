@@ -210,19 +210,18 @@ func TestBatchGetItem(t *testing.T) {
 	})
 
 	assert.Nil(t, err)
-
 	assert.Empty(t, ui)
 
-	g := table.
-		BatchGetItem(kvs...)
+	g := table.BatchGetItem(kvs...)
 
 	users := []*User{}
-	g.ExecuteWith(db, func() interface{} {
+	err = g.ExecuteWith(db, func() interface{} {
 		user := User{}
 		users = append(users, &user)
 		return &user
 	})
 
+	assert.Nil(t, err)
 	assert.Equal(t, len(users), 200)
 }
 
