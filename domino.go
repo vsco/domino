@@ -348,7 +348,9 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 		k := make(map[string]*dynamodb.KeysAndAttributes)
 		keysAndAttribs := dynamodb.KeysAndAttributes{}
 		k[table.Name] = &keysAndAttribs
-		for _, kv := range items {
+		s := map[string]*dynamodb.KeysAndAttributes{}
+		ss := []map[string]*dynamodb.KeysAndAttributes{s}
+		for t, kv := range items {
 			m := map[string]interface{}{
 				table.PartitionKey.Name(): kv.PartitionKey,
 			}
@@ -362,17 +364,11 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 				return err
 			}
 			keysAndAttribs.Keys = append(keysAndAttribs.Keys, attributes)
-		}
-		s := map[string]*dynamodb.KeysAndAttributes{}
-		ss := []map[string]*dynamodb.KeysAndAttributes{s}
-		for t, ka := range k {
-			fmt.Println(len(k))
-			if len(s) < 100 {
-				s[t] = ka
-				fmt.Println(len(s))
+
+			if t == 0 || t%100 != 0 {
+				s[string(t)] = k[table.Name]
 			} else {
-				fmt.Println(len(s))
-				s = map[string]*dynamodb.KeysAndAttributes{t: ka}
+				s = map[string]*dynamodb.KeysAndAttributes{string(t): k[table.Name]}
 				ss = append(ss, s)
 			}
 		}
@@ -388,6 +384,8 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 		input:            input,
 		delayedFunctions: []func() error{delayed},
 	}
+
+	fmt.Printf("%+v", q.input)
 
 	return &q
 }
