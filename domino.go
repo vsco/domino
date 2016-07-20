@@ -331,6 +331,9 @@ func (d *get) ExecuteWith(dynamo DynamoDBIFace, item interface{}) (r interface{}
 	return
 }
 
+type TableName string
+type Keys *dynamodb.KeysAndAttributes
+
 /***************************************************************************************/
 /************************************** BatchGetItem ***********************************/
 /***************************************************************************************/
@@ -345,12 +348,22 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 	/*Delay the attribute value construction, until Build time*/
 	input := &[]*dynamodb.BatchGetItemInput{}
 	delayed := func() error {
+
 		k := make(map[string]*dynamodb.KeysAndAttributes)
-		keysAndAttribs := dynamodb.KeysAndAttributes{}
-		k[table.Name] = &keysAndAttribs
-		s := map[string]*dynamodb.KeysAndAttributes{}
-		ss := []map[string]*dynamodb.KeysAndAttributes{s}
-		for t, kv := range items {
+		keysAndAttribs := &dynamodb.KeysAndAttributes{}
+		k[table.Name] = keysAndAttribs
+		ss := []map[string]*dynamodb.KeysAndAttributes{k}
+
+		for i, kv := range items {
+
+			if (i-1)%100 == 99 {
+				k = make(map[string]*dynamodb.KeysAndAttributes)
+				ss = append(ss, k)
+
+				keysAndAttribs = &dynamodb.KeysAndAttributes{}
+				k[table.Name] = keysAndAttribs
+			}
+
 			m := map[string]interface{}{
 				table.PartitionKey.Name(): kv.PartitionKey,
 			}
@@ -363,14 +376,9 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 			if err != nil {
 				return err
 			}
-			keysAndAttribs.Keys = append(keysAndAttribs.Keys, attributes)
 
-			if t == 0 || t%100 != 0 {
-				s[string(t)] = k[table.Name]
-			} else {
-				s = map[string]*dynamodb.KeysAndAttributes{string(t): k[table.Name]}
-				ss = append(ss, s)
-			}
+			(*keysAndAttribs).Keys = append((*keysAndAttribs).Keys, attributes)
+
 		}
 
 		for _, m := range ss {
@@ -384,8 +392,6 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 		input:            input,
 		delayedFunctions: []func() error{delayed},
 	}
-
-	fmt.Printf("%+v", q.input)
 
 	return &q
 }
@@ -415,7 +421,6 @@ func (d *batchGet) Build() (input []*dynamodb.BatchGetItemInput, err error) {
 func (d *batchGet) ExecuteWith(dynamo DynamoDBIFace, nextItem func() interface{}) error {
 
 	input, err := d.Build()
-
 	if err != nil {
 		return err
 	}
