@@ -1,12 +1,12 @@
 # Domino
-Concise, fluent, typesafe GO based query DSL for DynamoDB
+[![GoDoc](https://godoc.org/github.com/vsco/domino?status.svg)](https://godoc.org/github.com/vsco/domino)
 
 
-Features:  
-	* Fully typesafe fluent syntax DSL  
-	* Full Condition and Filter Expression functionality  
-	* Static schema definition  
-	* Streaming results for Query, Scan and BatchGet operations  
+Features:
+	* Fully typesafe fluent syntax DSL
+	* Full Condition and Filter Expression functionality
+	* Static schema definition
+	* Streaming results for Query, Scan and BatchGet operations
 
 
 ```go
@@ -67,7 +67,7 @@ func NewUserTable() MyTable {
 	}
 }
 
-table := NewUserTable() 
+table := NewUserTable()
 
 ```
 
@@ -90,7 +90,7 @@ GetItem
 ```go
 q := table.
 	GetItem(
-		KeyValue{"naveen@email.com", "password"}, 
+		KeyValue{"naveen@email.com", "password"},
 	).
 	SetConsistentRead(true)
 r, err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo, &User{}) //Pass in domain object template object
@@ -142,8 +142,8 @@ expr := Or(
 		And(
 			table.visits.Size(lte, 25),
 			table.nameField.Size(gte, 25),
-		),		
-		table.lastLoginDate.LessThanOrEq(time.Now().UnixNano()),		
+		),
+		table.lastLoginDate.LessThanOrEq(time.Now().UnixNano()),
 	)
 q = table.
 	Query(
@@ -155,7 +155,7 @@ q = table.
 
 ```
 
-Streaming Results 
+Streaming Results
 
 ```go
 
@@ -187,11 +187,11 @@ Streaming Results
 
 
 ```go
-	
+
 	/*Scan*/
 
 	p := table.passwordField.BeginsWith("password")
-	q := table.Scan().SetLimit(100).		
+	q := table.Scan().SetLimit(100).
 
 	channel, errChan := q.ExecuteWith(db, &User{})
 
