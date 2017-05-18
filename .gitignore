@@ -9,6 +9,12 @@ bin
 dist
 vendor/
 
+bazel-bin
+bazel-genfiles
+bazel-domino
+bazel-out
+bazel-testlogs
+
 # Architecture specific extensions/prefixes
 *.cgo1.go
 *.cgo2.c

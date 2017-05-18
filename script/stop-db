@@ -1,8 +1,0 @@
-#!/bin/bash
-PID=script/dyna.pid
-if [ -f $PID ]
-then 
-	echo "Stopping dynalite"
-	kill `cat $PID`
-	rm $PID
-fi
