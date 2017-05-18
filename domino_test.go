@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const localDynamoHost = "http://127.0.0.1:8080"
+const localDynamoHost = "http://127.0.0.1:4569"
 
 type UserTable struct {
 	DynamoTable
