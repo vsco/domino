@@ -1,28 +1,30 @@
 package domino
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
 
 /*DynamoDBIFace is the interface to the underlying aws dynamo db api*/
 type DynamoDBIFace interface {
-	CreateTable(input *dynamodb.CreateTableInput) (*dynamodb.CreateTableOutput, error)
-	DeleteTable(input *dynamodb.DeleteTableInput) (*dynamodb.DeleteTableOutput, error)
-	GetItem(input *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error)
-	BatchGetItem(input *dynamodb.BatchGetItemInput) (*dynamodb.BatchGetItemOutput, error)
-	PutItem(input *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error)
-	Query(input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error)
-	Scan(input *dynamodb.ScanInput) (*dynamodb.ScanOutput, error)
-	UpdateItem(input *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error)
-	DeleteItem(input *dynamodb.DeleteItemInput) (*dynamodb.DeleteItemOutput, error)
-	BatchWriteItem(input *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error)
+	CreateTableWithContext(aws.Context, *dynamodb.CreateTableInput, ...request.Option) (*dynamodb.CreateTableOutput, error)
+	DeleteTableWithContext(aws.Context, *dynamodb.DeleteTableInput, ...request.Option) (*dynamodb.DeleteTableOutput, error)
+	GetItemWithContext(aws.Context, *dynamodb.GetItemInput, ...request.Option) (*dynamodb.GetItemOutput, error)
+	BatchGetItemWithContext(aws.Context, *dynamodb.BatchGetItemInput, ...request.Option) (*dynamodb.BatchGetItemOutput, error)
+	PutItemWithContext(aws.Context, *dynamodb.PutItemInput, ...request.Option) (*dynamodb.PutItemOutput, error)
+	QueryWithContext(aws.Context, *dynamodb.QueryInput, ...request.Option) (*dynamodb.QueryOutput, error)
+	ScanWithContext(aws.Context, *dynamodb.ScanInput, ...request.Option) (*dynamodb.ScanOutput, error)
+	UpdateItemWithContext(aws.Context, *dynamodb.UpdateItemInput, ...request.Option) (*dynamodb.UpdateItemOutput, error)
+	DeleteItemWithContext(aws.Context, *dynamodb.DeleteItemInput, ...request.Option) (*dynamodb.DeleteItemOutput, error)
+	BatchWriteItemWithContext(aws.Context, *dynamodb.BatchWriteItemInput, ...request.Option) (*dynamodb.BatchWriteItemOutput, error)
 }
 
 const (
@@ -313,8 +315,8 @@ func (d *get) Build() *dynamodb.GetItemInput {
  **
  ** Returns a tuple of the hydrated item struct, or an error
  */
-func (d *get) ExecuteWith(dynamo DynamoDBIFace, item interface{}) (r interface{}, err error) {
-	out, err := dynamo.GetItem(d.Build())
+func (d *get) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, item interface{}, opts ...request.Option) (r interface{}, err error) {
+	out, err := dynamo.GetItemWithContext(ctx, d.Build(), opts...)
 	if err != nil {
 		err = handleAwsErr(err)
 		return
@@ -418,7 +420,7 @@ func (d *batchGet) Build() (input []*dynamodb.BatchGetItemInput, err error) {
  ** 		   store each item in an array before returning.
  **
  */
-func (d *batchGet) ExecuteWith(dynamo DynamoDBIFace, nextItem func() interface{}) error {
+func (d *batchGet) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, nextItem func() interface{}, opts ...request.Option) error {
 
 	input, err := d.Build()
 	if err != nil {
@@ -428,7 +430,7 @@ func (d *batchGet) ExecuteWith(dynamo DynamoDBIFace, nextItem func() interface{}
 		retry := 0
 	Execute:
 
-		out, err := dynamo.BatchGetItem(bg)
+		out, err := dynamo.BatchGetItemWithContext(ctx, bg, opts...)
 
 		if err != nil {
 			return handleAwsErr(err)
@@ -481,11 +483,12 @@ func (d *put) Build() *dynamodb.PutItemInput {
 
 /**
  ** ExecuteWith ... Execute a dynamo PutItem call with a passed in dynamodb instance
+ ** ctx - An instance of context
  ** dynamo - The underlying dynamodb api
  **
  */
-func (d *put) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.PutItem(d.Build())
+func (d *put) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) error {
+	_, err := dynamo.PutItemWithContext(ctx, d.Build(), opts...)
 	if err != nil {
 		return handleAwsErr(err)
 	}
@@ -584,19 +587,20 @@ func (d *batchPut) Build() (input []dynamodb.BatchWriteItemInput, err error) {
 
 /**
  ** ExecuteWith ... Execute a dynamo BatchWriteItem call with a passed in dynamodb instance and unprocessed item pointer function
+ ** ctx - An instance of context
  ** dynamo - The underlying dynamodb api
  ** unprocessedItem - The item pointer function, which is called on each object returned from dynamodb that could not be processed.
  ** 				The function should store each item pointer in an array before returning.
  **
  */
-func (d *batchPut) ExecuteWith(dynamo DynamoDBIFace, unprocessedItem func() interface{}) error {
+func (d *batchPut) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, unprocessedItem func() interface{}, opts ...request.Option) error {
 
 	batches, err := d.Build()
 	if err != nil {
 		return err
 	}
 	for _, batch := range batches {
-		out, err := dynamo.BatchWriteItem(&batch)
+		out, err := dynamo.BatchWriteItemWithContext(ctx, &batch, opts...)
 		if err != nil {
 			return handleAwsErr(err)
 		}
@@ -641,11 +645,12 @@ func (d *deleteItem) Build() *dynamodb.DeleteItemInput {
 
 /**
  ** ExecuteWith ... Execute a dynamo DeleteItem call with a passed in dynamodb instance
+ ** ctx - An instance of context
  ** dynamo - The underlying dynamodb api
  **
  */
-func (d *deleteItem) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.DeleteItem(d.Build())
+func (d *deleteItem) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) error {
+	_, err := dynamo.DeleteItemWithContext(ctx, d.Build(), opts...)
 	if err != nil {
 		return handleAwsErr(err)
 	}
@@ -731,11 +736,12 @@ func (d *Update) Build() *dynamodb.UpdateItemInput {
 
 /**
  ** ExecuteWith ... Execute a dynamo BatchGetItem call with a passed in dynamodb instance
+ ** ctx - an instance of context
  ** dynamo - The underlying dynamodb api
  **
  */
-func (d *Update) ExecuteWith(dynamo DynamoDBIFace) error {
-	_, err := dynamo.UpdateItem(d.Build())
+func (d *Update) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) error {
+	_, err := dynamo.UpdateItemWithContext(ctx, d.Build(), opts...)
 	if err != nil {
 		return handleAwsErr(err)
 	}
@@ -842,14 +848,15 @@ func (d *Query) Build() *dynamodb.QueryInput {
 }
 
 /**
- ** ExecuteWith ... Execute a dynamo BatchGetItem call with a passed in dynamodb instance and next item pointer
+ ** StreamWith ... Execute a dynamo Stream call with a passed in dynamodb instance and next item pointer
+ ** ctx - An instance of context
  ** dynamo - The underlying dynamodb api
  ** nextItem - The item pointer which is copied and hydrated on every item. The function SHOULD NOT
  ** 		   store each item. It should simply return an empty struct pointer. Each of which is hydrated and pused on the
  ** 			returned channel.
  **
  */
-func (d *Query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
+func (d *Query) StreamWith(ctx context.Context, dynamodb DynamoDBIFace, nextItem interface{}, opts ...request.Option) (c chan interface{}, e chan error) {
 	v := reflect.ValueOf(nextItem)
 	t := reflect.Indirect(v).Type()
 
@@ -865,7 +872,7 @@ func (d *Query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 		if d.Limit != nil && count >= *d.Limit {
 			return
 		}
-		out, err := dynamodb.Query(d.Build())
+		out, err := dynamodb.QueryWithContext(ctx, d.Build(), opts...)
 		if err != nil {
 			e <- handleAwsErr(err)
 			return
@@ -902,7 +909,7 @@ func (d *Query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 	return
 }
 
-func (d *Query) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (errChan chan error) {
+func (d *Query) StreamWithChannel(ctx context.Context, dynamodb DynamoDBIFace, channel interface{}, opts ...request.Option) (errChan chan error) {
 	t := reflect.TypeOf(channel).Elem()
 	isPtr := t.Kind() == reflect.Ptr
 	if isPtr {
@@ -920,7 +927,7 @@ func (d *Query) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (
 		if d.Limit != nil && count >= *d.Limit {
 			return
 		}
-		out, err := dynamodb.Query(d.Build())
+		out, err := dynamodb.QueryWithContext(ctx, d.Build(), opts...)
 		if err != nil {
 			errChan <- handleAwsErr(err)
 			return
@@ -963,8 +970,8 @@ func (d *Query) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (
 	return
 }
 
-func (d *Query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (items []interface{}, err error) {
-	c, e := d.StreamWith(dynamodb, nextItem)
+func (d *Query) ExecuteWith(ctx context.Context, dynamodb DynamoDBIFace, nextItem interface{}, opts ...request.Option) (items []interface{}, err error) {
+	c, e := d.StreamWith(ctx, dynamodb, nextItem, opts...)
 	items = []interface{}{}
 
 STREAM:
@@ -1066,7 +1073,7 @@ func (d *Scan) Build() *dynamodb.ScanInput {
  ** 		   the returned channel.
  **
  */
-func (d *Scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
+func (d *Scan) ExecuteWith(ctx context.Context, dynamodb DynamoDBIFace, nextItem interface{}, opts ...request.Option) (c chan interface{}, e chan error) {
 
 	c = make(chan interface{})
 	e = make(chan error)
@@ -1080,7 +1087,7 @@ func (d *Scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 		if d.Limit != nil && count >= *d.Limit {
 			return
 		}
-		out, err := dynamodb.Scan(d.Build())
+		out, err := dynamodb.ScanWithContext(ctx, d.Build(), opts...)
 		if err != nil {
 			e <- handleAwsErr(err)
 			return
@@ -1107,7 +1114,7 @@ func (d *Scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 	return
 }
 
-func (d *Scan) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (errChan chan error) {
+func (d *Scan) StreamWithChannel(ctx context.Context, dynamodb DynamoDBIFace, channel interface{}, opts ...request.Option) (errChan chan error) {
 	t := reflect.TypeOf(channel).Elem()
 	isPtr := t.Kind() == reflect.Ptr
 	if isPtr {
@@ -1125,7 +1132,7 @@ func (d *Scan) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (e
 		if d.Limit != nil && count >= *d.Limit {
 			return
 		}
-		out, err := dynamodb.Scan(d.Build())
+		out, err := dynamodb.ScanWithContext(ctx, d.Build(), opts...)
 		if err != nil {
 			errChan <- handleAwsErr(err)
 			return
@@ -1361,9 +1368,9 @@ func (d *createTable) Build() *dynamodb.CreateTableInput {
 	return &r
 }
 
-func (d *createTable) ExecuteWith(dynamo DynamoDBIFace) error {
+func (d *createTable) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) error {
 	defer time.Sleep(time.Duration(500) * time.Millisecond)
-	_, err := dynamo.CreateTable(d.Build())
+	_, err := dynamo.CreateTableWithContext(ctx, d.Build(), opts...)
 	return handleAwsErr(err)
 }
 
@@ -1382,9 +1389,9 @@ func (d *deleteTable) Build() *dynamodb.DeleteTableInput {
 	return &r
 }
 
-func (d *deleteTable) ExecuteWith(dynamo DynamoDBIFace) error {
+func (d *deleteTable) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) error {
 	defer time.Sleep(time.Duration(500) * time.Millisecond)
-	_, err := dynamo.DeleteTable(d.Build())
+	_, err := dynamo.DeleteTableWithContext(ctx, d.Build(), opts...)
 	return handleAwsErr(err)
 }
 
