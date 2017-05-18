@@ -59,33 +59,33 @@ type DynamoFieldIFace interface {
 	IsEmpty() bool
 }
 
-type dynamoField struct {
+type DynamoField struct {
 	name  string
 	_type string
 	empty bool //If true, this represents an empty field
 }
 
 type dynamoValueField struct {
-	dynamoField
+	DynamoField
 }
 
 type dynamoCollectionField struct {
-	dynamoField
+	DynamoField
 }
 
-func (d dynamoField) Name() string {
+func (d DynamoField) Name() string {
 	return d.name
 }
-func (d dynamoField) Type() string {
+func (d DynamoField) Type() string {
 	return d._type
 }
-func (d dynamoField) IsEmpty() bool {
+func (d DynamoField) IsEmpty() bool {
 	return d.empty
 }
 
 /*Empty - An empty dynamo field*/
 type Empty struct {
-	dynamoField
+	DynamoField
 }
 
 /*Numeric - A numeric dynamo field*/
@@ -136,7 +136,7 @@ type Map struct {
 /*EmptyField ... A constructor for an empty dynamo field*/
 func EmptyField() Empty {
 	return Empty{
-		dynamoField{
+		DynamoField{
 			empty: true,
 			_type: dNULL,
 		},
@@ -147,7 +147,7 @@ func EmptyField() Empty {
 func NumericField(name string) Numeric {
 	return Numeric{
 		dynamoValueField{
-			dynamoField{
+			DynamoField{
 				name:  name,
 				_type: dN,
 			},
@@ -159,7 +159,7 @@ func NumericField(name string) Numeric {
 func NumericSetField(name string) NumericSet {
 	return NumericSet{
 		dynamoCollectionField{
-			dynamoField{
+			DynamoField{
 				name:  name,
 				_type: dNS,
 			},
@@ -171,7 +171,7 @@ func NumericSetField(name string) NumericSet {
 func StringField(name string) String {
 	return String{
 		dynamoValueField{
-			dynamoField{
+			DynamoField{
 				name:  name,
 				_type: dS,
 			},
@@ -183,7 +183,7 @@ func StringField(name string) String {
 func BoolField(name string) Bool {
 	return Bool{
 		dynamoValueField{
-			dynamoField{
+			DynamoField{
 				name:  name,
 				_type: dBOOL,
 			},
@@ -195,7 +195,7 @@ func BoolField(name string) Bool {
 func BinaryField(name string) Binary {
 	return Binary{
 		dynamoValueField{
-			dynamoField{
+			DynamoField{
 				name:  name,
 				_type: dB,
 			},
@@ -207,7 +207,7 @@ func BinaryField(name string) Binary {
 func BinarySetField(name string) BinarySet {
 	return BinarySet{
 		dynamoCollectionField{
-			dynamoField{
+			DynamoField{
 				name:  name,
 				_type: dBS,
 			},
@@ -219,7 +219,7 @@ func BinarySetField(name string) BinarySet {
 func StringSetField(name string) StringSet {
 	return StringSet{
 		dynamoCollectionField{
-			dynamoField{
+			DynamoField{
 				name:  name,
 				_type: dSS,
 			},
@@ -231,7 +231,7 @@ func StringSetField(name string) StringSet {
 func ListField(name string) List {
 	return List{
 		dynamoCollectionField{
-			dynamoField{
+			DynamoField{
 				name:  name,
 				_type: dL,
 			},
@@ -243,7 +243,7 @@ func ListField(name string) List {
 func MapField(name string) Map {
 	return Map{
 		dynamoCollectionField{
-			dynamoField{
+			DynamoField{
 				name:  name,
 				_type: dL,
 			},
@@ -655,19 +655,19 @@ func (d *deleteItem) ExecuteWith(dynamo DynamoDBIFace) error {
 /***************************************************************************************/
 /*********************************** UpdateItem ****************************************/
 /***************************************************************************************/
-type update struct {
+type Update struct {
 	input            dynamodb.UpdateItemInput
 	delayedFunctions []func() error
 }
 
 /*UpdateItem represents dynamo batch get item call*/
-func (table DynamoTable) UpdateItem(key KeyValue) *update {
-	q := update{input: dynamodb.UpdateItemInput{TableName: &table.Name}}
+func (table DynamoTable) UpdateItem(key KeyValue) *Update {
+	q := Update{input: dynamodb.UpdateItemInput{TableName: &table.Name}}
 	appendKeyAttribute(&q.input.Key, table, key)
 	return &q
 }
 
-func (d *update) SetConditionExpression(c Expression) *update {
+func (d *Update) SetConditionExpression(c Expression) *Update {
 	delayed := func() error {
 		s, m, _ := c.construct(1, true)
 		d.input.ConditionExpression = &s
@@ -687,7 +687,7 @@ func (d *update) SetConditionExpression(c Expression) *update {
 	return d
 }
 
-func (d *update) SetUpdateExpression(exprs ...*updateExpression) *update {
+func (d *Update) SetUpdateExpression(exprs ...*UpdateExpression) *Update {
 	m := make(map[string]interface{})
 	ms := make(map[string]string)
 
@@ -724,7 +724,7 @@ func (d *update) SetUpdateExpression(exprs ...*updateExpression) *update {
 	return d
 }
 
-func (d *update) Build() *dynamodb.UpdateItemInput {
+func (d *Update) Build() *dynamodb.UpdateItemInput {
 	r := dynamodb.UpdateItemInput((*d).input)
 	return &r
 }
@@ -734,7 +734,7 @@ func (d *update) Build() *dynamodb.UpdateItemInput {
  ** dynamo - The underlying dynamodb api
  **
  */
-func (d *update) ExecuteWith(dynamo DynamoDBIFace) error {
+func (d *Update) ExecuteWith(dynamo DynamoDBIFace) error {
 	_, err := dynamo.UpdateItem(d.Build())
 	if err != nil {
 		return handleAwsErr(err)
@@ -745,16 +745,16 @@ func (d *update) ExecuteWith(dynamo DynamoDBIFace) error {
 /***************************************************************************************/
 /********************************************** Query **********************************/
 /***************************************************************************************/
-type query struct {
+type Query struct {
 	*dynamodb.QueryInput
 	pageSize         *int64
 	capacityHandlers []func(*dynamodb.ConsumedCapacity)
 }
 
 /*Query represents dynamo batch get item call*/
-func (table DynamoTable) Query(partitionKeyCondition keyCondition, rangeKeyCondition *keyCondition) *query {
+func (table DynamoTable) Query(partitionKeyCondition KeyCondition, rangeKeyCondition *KeyCondition) *Query {
 	var input dynamodb.QueryInput
-	q := query{
+	q := Query{
 		QueryInput: &input,
 	}
 
@@ -775,11 +775,11 @@ func (table DynamoTable) Query(partitionKeyCondition keyCondition, rangeKeyCondi
 	return &q
 }
 
-func (d *query) SetConsistentRead(c bool) *query {
+func (d *Query) SetConsistentRead(c bool) *Query {
 	(*d).ConsistentRead = &c
 	return d
 }
-func (d *query) SetAttributesToGet(fields []dynamoField) *query {
+func (d *Query) SetAttributesToGet(fields []DynamoField) *Query {
 	a := make([]*string, len(fields))
 	for i, f := range fields {
 		v := f.Name()
@@ -789,30 +789,30 @@ func (d *query) SetAttributesToGet(fields []dynamoField) *query {
 	return d
 }
 
-func (d *query) SetLimit(limit int) *query {
+func (d *Query) SetLimit(limit int) *Query {
 	s := int64(limit)
 	d.Limit = &s
 	return d
 }
 
-func (d *query) SetPageSize(pageSize int) *query {
+func (d *Query) SetPageSize(pageSize int) *Query {
 	ps := int64(pageSize)
 	d.pageSize = &ps
 	return d
 }
 
-func (d *query) SetScanForward(forward bool) *query {
+func (d *Query) SetScanForward(forward bool) *Query {
 	d.ScanIndexForward = &forward
 	return d
 }
 
-func (d *query) WithConsumedCapacityHandler(f func(*dynamodb.ConsumedCapacity)) *query {
+func (d *Query) WithConsumedCapacityHandler(f func(*dynamodb.ConsumedCapacity)) *Query {
 	d.ReturnConsumedCapacity = aws.String("INDEXES")
 	d.capacityHandlers = append(d.capacityHandlers, f)
 	return d
 }
 
-func (d *query) SetFilterExpression(c Expression) *query {
+func (d *Query) SetFilterExpression(c Expression) *Query {
 	s, m, _ := c.construct(1, true)
 	d.FilterExpression = &s
 
@@ -822,17 +822,17 @@ func (d *query) SetFilterExpression(c Expression) *query {
 	return d
 }
 
-func (d *query) SetLocalIndex(idx LocalSecondaryIndex) *query {
+func (d *Query) SetLocalIndex(idx LocalSecondaryIndex) *Query {
 	d.IndexName = &idx.Name
 	return d
 }
 
-func (d *query) SetGlobalIndex(idx GlobalSecondaryIndex) *query {
+func (d *Query) SetGlobalIndex(idx GlobalSecondaryIndex) *Query {
 	d.IndexName = &idx.Name
 	return d
 }
 
-func (d *query) Build() *dynamodb.QueryInput {
+func (d *Query) Build() *dynamodb.QueryInput {
 	r := dynamodb.QueryInput(*d.QueryInput)
 	if d.pageSize != nil {
 		r.Limit = d.pageSize
@@ -849,7 +849,7 @@ func (d *query) Build() *dynamodb.QueryInput {
  ** 			returned channel.
  **
  */
-func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
+func (d *Query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
 	v := reflect.ValueOf(nextItem)
 	t := reflect.Indirect(v).Type()
 
@@ -902,7 +902,7 @@ func (d *query) StreamWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 	return
 }
 
-func (d *query) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (errChan chan error) {
+func (d *Query) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (errChan chan error) {
 	t := reflect.TypeOf(channel).Elem()
 	isPtr := t.Kind() == reflect.Ptr
 	if isPtr {
@@ -963,7 +963,7 @@ func (d *query) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (
 	return
 }
 
-func (d *query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (items []interface{}, err error) {
+func (d *Query) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (items []interface{}, err error) {
 	c, e := d.StreamWith(dynamodb, nextItem)
 	items = []interface{}{}
 
@@ -988,15 +988,15 @@ STREAM:
 /***************************************************************************************/
 /********************************************** Scan **********************************/
 /***************************************************************************************/
-type scan struct {
+type Scan struct {
 	*dynamodb.ScanInput
 	pageSize *int64
 }
 
 /*Scan represents dynamo scan item call*/
-func (table DynamoTable) Scan() *scan {
+func (table DynamoTable) Scan() *Scan {
 	var input dynamodb.ScanInput
-	q := scan{
+	q := Scan{
 		ScanInput: &input,
 	}
 
@@ -1004,11 +1004,11 @@ func (table DynamoTable) Scan() *scan {
 	return &q
 }
 
-func (d *scan) SetConsistentRead(c bool) *scan {
+func (d *Scan) SetConsistentRead(c bool) *Scan {
 	(*d).ConsistentRead = &c
 	return d
 }
-func (d *scan) SetAttributesToGet(fields []dynamoField) *scan {
+func (d *Scan) SetAttributesToGet(fields []DynamoField) *Scan {
 	a := make([]*string, len(fields))
 	for i, f := range fields {
 		v := f.Name()
@@ -1018,19 +1018,19 @@ func (d *scan) SetAttributesToGet(fields []dynamoField) *scan {
 	return d
 }
 
-func (d *scan) SetLimit(limit int) *scan {
+func (d *Scan) SetLimit(limit int) *Scan {
 	s := int64(limit)
 	d.Limit = &s
 	return d
 }
 
-func (d *scan) SetPageSize(pageSize int) *scan {
+func (d *Scan) SetPageSize(pageSize int) *Scan {
 	ps := int64(pageSize)
 	d.pageSize = &ps
 	return d
 }
 
-func (d *scan) SetFilterExpression(c Expression) *scan {
+func (d *Scan) SetFilterExpression(c Expression) *Scan {
 	s, m, _ := c.construct(1, true)
 	d.FilterExpression = &s
 
@@ -1040,17 +1040,17 @@ func (d *scan) SetFilterExpression(c Expression) *scan {
 	return d
 }
 
-func (d *scan) SetLocalIndex(idx LocalSecondaryIndex) *scan {
+func (d *Scan) SetLocalIndex(idx LocalSecondaryIndex) *Scan {
 	d.IndexName = &idx.Name
 	return d
 }
 
-func (d *scan) SetGlobalIndex(idx GlobalSecondaryIndex) *scan {
+func (d *Scan) SetGlobalIndex(idx GlobalSecondaryIndex) *Scan {
 	d.IndexName = &idx.Name
 	return d
 }
 
-func (d *scan) Build() *dynamodb.ScanInput {
+func (d *Scan) Build() *dynamodb.ScanInput {
 	r := dynamodb.ScanInput(*d.ScanInput)
 	if d.pageSize != nil {
 		r.Limit = d.pageSize
@@ -1066,7 +1066,7 @@ func (d *scan) Build() *dynamodb.ScanInput {
  ** 		   the returned channel.
  **
  */
-func (d *scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
+func (d *Scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan interface{}, e chan error) {
 
 	c = make(chan interface{})
 	e = make(chan error)
@@ -1107,7 +1107,7 @@ func (d *scan) ExecuteWith(dynamodb DynamoDBIFace, nextItem interface{}) (c chan
 	return
 }
 
-func (d *scan) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (errChan chan error) {
+func (d *Scan) StreamWithChannel(dynamodb DynamoDBIFace, channel interface{}) (errChan chan error) {
 	t := reflect.TypeOf(channel).Elem()
 	isPtr := t.Kind() == reflect.Ptr
 	if isPtr {
