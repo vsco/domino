@@ -1,0 +1,41 @@
+#!/bin/bash
+set -e
+
+export GO15VENDOREXPERIMENT=1
+cd $(dirname "$0")/..
+
+# start the db and hold onto the pid
+script/start-db
+
+# close dynalite on interrupt or exit
+trap close_dynalite INT
+trap close_dynalite EXIT
+
+function close_dynalite() {
+	script/stop-db
+}
+
+script/require-glide
+
+pkgs=*.go
+
+TARGET="$(glide novendor)"
+if [ "$#" -gt "0" ]; then
+  TARGET="$@"
+fi
+
+FMT_ERRS=$(gofmt -l $pkgs 2>&1 | tee /dev/tty | wc -l)
+if [ "$FMT_ERRS" -gt "0" ]; then
+  echo "$FMT_ERRS Lint error(s) found in above file(s)."
+  exit 1
+fi
+echo "ok gofmt"
+
+VET_ERRS=$(go tool vet -tests $pkgs 2>&1 | tee /dev/tty | wc -l)
+if [ "$VET_ERRS" -gt "0" ]; then
+   echo "$VET_ERRS Vet error(s) found above."
+  exit 1
+fi
+echo "ok go vet"
+
+go test -cover $TARGET
