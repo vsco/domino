@@ -3,6 +3,7 @@ package domino
 import (
 	// "fmt"
 
+	"context"
 	"net/http"
 	"strconv"
 	"sync"
@@ -106,20 +107,22 @@ func NewDB() DynamoDBIFace {
 
 func TestGetItem(t *testing.T) {
 
+	ctx := context.Background()
+
 	table := NewUserTable()
 
 	db := NewDB()
 
-	err := table.CreateTable().ExecuteWith(db)
-	defer table.DeleteTable().ExecuteWith(db)
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
 	item := User{Email: "naveen@email.com", Password: "password"}
-	err = table.PutItem(item).ExecuteWith(db)
+	err = table.PutItem(item).ExecuteWith(ctx, db)
 	assert.Nil(t, err)
 
-	r, err := table.GetItem(KeyValue{"naveen@email.com", "password"}).ExecuteWith(db, &User{})
+	r, err := table.GetItem(KeyValue{"naveen@email.com", "password"}).ExecuteWith(ctx, db, &User{})
 	assert.Nil(t, err)
 	assert.Equal(t, User{Email: "naveen@email.com", Password: "password"}, *r.(*User))
 }
@@ -129,12 +132,14 @@ func TestGetItemEmpty(t *testing.T) {
 
 	db := NewDB()
 
-	err := table.CreateTable().ExecuteWith(db)
-	defer table.DeleteTable().ExecuteWith(db)
+	ctx := context.Background()
+
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
-	user, err := table.GetItem(KeyValue{"naveen@email.com", "password"}).ExecuteWith(db, &User{})
+	user, err := table.GetItem(KeyValue{"naveen@email.com", "password"}).ExecuteWith(ctx, db, &User{})
 	assert.Nil(t, err)
 	assert.Nil(t, user)
 }
@@ -142,8 +147,9 @@ func TestGetItemEmpty(t *testing.T) {
 func TestBatchPutItem(t *testing.T) {
 	table := NewUserTable()
 	db := NewDB()
-	err := table.CreateTable().ExecuteWith(db)
-	defer table.DeleteTable().ExecuteWith(db)
+	ctx := context.Background()
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
@@ -158,7 +164,7 @@ func TestBatchPutItem(t *testing.T) {
 			KeyValue{"naveen@email.com", "password"},
 		)
 	unprocessed := []*User{}
-	err = q.ExecuteWith(db, func() interface{} {
+	err = q.ExecuteWith(ctx, db, func() interface{} {
 		user := User{}
 		unprocessed = append(unprocessed, &user)
 		return &user
@@ -175,7 +181,7 @@ func TestBatchPutItem(t *testing.T) {
 		)
 
 	users := []*User{}
-	g.ExecuteWith(db, func() interface{} {
+	g.ExecuteWith(ctx, db, func() interface{} {
 		user := User{}
 		users = append(users, &user)
 		return &user
@@ -187,8 +193,9 @@ func TestBatchPutItem(t *testing.T) {
 func TestBatchGetItem(t *testing.T) {
 	table := NewUserTable()
 	db := NewDB()
-	err := table.CreateTable().ExecuteWith(db)
-	defer table.DeleteTable().ExecuteWith(db)
+	ctx := context.Background()
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
@@ -203,7 +210,7 @@ func TestBatchGetItem(t *testing.T) {
 	ui := []*User{}
 	w := table.BatchWriteItem().PutItems(items...)
 
-	err = w.ExecuteWith(db, func() interface{} {
+	err = w.ExecuteWith(ctx, db, func() interface{} {
 		u := User{}
 		ui = append(ui, &u)
 		return &u
@@ -215,7 +222,7 @@ func TestBatchGetItem(t *testing.T) {
 	g := table.BatchGetItem(kvs...)
 
 	users := []*User{}
-	err = g.ExecuteWith(db, func() interface{} {
+	err = g.ExecuteWith(ctx, db, func() interface{} {
 		user := User{}
 		users = append(users, &user)
 		return &user
@@ -228,14 +235,16 @@ func TestBatchGetItem(t *testing.T) {
 func TestUpdateItem(t *testing.T) {
 	table := NewUserTable()
 	db := NewDB()
-	err := table.CreateTable().ExecuteWith(db)
-	defer table.DeleteTable().ExecuteWith(db)
+	ctx := context.Background()
+
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
 	item := User{Email: "naveen@email.com", Password: "password", Visits: []int64{time.Now().UnixNano()}}
 	q := table.PutItem(item)
-	err = q.ExecuteWith(db)
+	err = q.ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
@@ -249,11 +258,11 @@ func TestUpdateItem(t *testing.T) {
 			table.preferences.RemoveKey("update_email"),
 		)
 
-	err = u.ExecuteWith(db)
+	err = u.ExecuteWith(ctx, db)
 	assert.Nil(t, err)
 	g := table.GetItem(KeyValue{"naveen@email.com", "password"})
 
-	user, err := g.ExecuteWith(db, &User{})
+	user, err := g.ExecuteWith(ctx, db, &User{})
 
 	assert.NotNil(t, user)
 
@@ -262,15 +271,16 @@ func TestUpdateItem(t *testing.T) {
 func TestPutItem(t *testing.T) {
 	table := NewUserTable()
 	db := NewDB()
+	ctx := context.Background()
 
-	err := table.CreateTable().ExecuteWith(db)
-	defer table.DeleteTable().ExecuteWith(db)
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
 	item := User{Email: "joe@email.com", Password: "password"}
 	q := table.PutItem(item)
-	err = q.ExecuteWith(db)
+	err = q.ExecuteWith(ctx, db)
 
 	v := table.
 		UpdateItem(
@@ -280,13 +290,13 @@ func TestPutItem(t *testing.T) {
 			table.loginCount.Increment(1),
 			table.registrationDate.SetField(time.Now().UnixNano(), false),
 		)
-	err = v.ExecuteWith(db)
+	err = v.ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
 	g := table.GetItem(KeyValue{"joe@email.com", "password"})
 
-	user, err := g.ExecuteWith(db, &User{})
+	user, err := g.ExecuteWith(ctx, db, &User{})
 
 	assert.NotNil(t, user)
 }
@@ -294,9 +304,10 @@ func TestPutItem(t *testing.T) {
 func TestExpressions(t *testing.T) {
 	table := NewUserTable()
 	db := NewDB()
+	ctx := context.Background()
 
-	err := table.CreateTable().ExecuteWith(db)
-	defer table.DeleteTable().ExecuteWith(db)
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
@@ -327,7 +338,7 @@ func TestExpressions(t *testing.T) {
 	expectedFilter := "begins_with(registrationDate,:t_1) OR contains(lastName,:25_2) OR (NOT contains(registrationDate,:t_3)) OR (size(registrationDate) <=:25_4 AND size(firstName) >=:25_5) OR registrationDate = :test_6 OR registrationDate <= :test_7 OR (registrationDate between :0_8 and :1_9) OR (registrationDate in (:0_10,:1_11))"
 	assert.Equal(t, expectedFilter, *q.Build().FilterExpression)
 
-	channel, errChan := q.StreamWith(db, User{})
+	channel, errChan := q.StreamWith(ctx, db, User{})
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -351,9 +362,10 @@ func TestDynamoQuery(t *testing.T) {
 
 	table := NewUserTable()
 	db := NewDB()
+	ctx := context.Background()
 
-	err := table.CreateTable().ExecuteWith(db)
-	defer table.DeleteTable().ExecuteWith(db)
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
@@ -367,7 +379,7 @@ func TestDynamoQuery(t *testing.T) {
 	ui := []*User{}
 	w := table.BatchWriteItem().PutItems(items...)
 
-	err = w.ExecuteWith(db, func() interface{} {
+	err = w.ExecuteWith(ctx, db, func() interface{} {
 		u := User{}
 		ui = append(ui, &u)
 		return &u
@@ -388,7 +400,7 @@ func TestDynamoQuery(t *testing.T) {
 		SetPageSize(10).
 		SetScanForward(true)
 
-	items, err = q.ExecuteWith(db, &User{})
+	items, err = q.ExecuteWith(ctx, db, &User{})
 
 	assert.Nil(t, err)
 	assert.Equal(t, limit, len(items))
@@ -398,9 +410,10 @@ func TestDynamoStreamQuery(t *testing.T) {
 
 	table := NewUserTable()
 	db := NewDB()
+	ctx := context.Background()
 
-	err := table.CreateTable().ExecuteWith(db)
-	defer table.DeleteTable().ExecuteWith(db)
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
@@ -414,7 +427,7 @@ func TestDynamoStreamQuery(t *testing.T) {
 	ui := []*User{}
 	w := table.BatchWriteItem().PutItems(items...)
 
-	err = w.ExecuteWith(db, func() interface{} {
+	err = w.ExecuteWith(ctx, db, func() interface{} {
 		u := User{}
 		ui = append(ui, &u)
 		return &u
@@ -439,7 +452,7 @@ func TestDynamoStreamQuery(t *testing.T) {
 	users := []User{}
 	channel := make(chan *User)
 
-	_ = q.StreamWithChannel(db, channel)
+	_ = q.StreamWithChannel(ctx, db, channel)
 
 	for u := range channel {
 		users = append(users, *u)
@@ -452,9 +465,10 @@ func TestDynamoStreamQuery(t *testing.T) {
 func TestDynamoQueryError(t *testing.T) {
 	table := NewUserTable()
 	db := NewDB()
+	ctx := context.Background()
 
-	err := table.CreateTable().ExecuteWith(db)
-	defer table.DeleteTable().ExecuteWith(db)
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
@@ -465,7 +479,7 @@ func TestDynamoQueryError(t *testing.T) {
 		items = append(items, &User{Email: e, Password: "password" + strconv.Itoa(i)})
 	}
 
-	_ = table.BatchWriteItem().PutItems(items...).ExecuteWith(db, func() interface{} { return &User{} })
+	_ = table.BatchWriteItem().PutItems(items...).ExecuteWith(ctx, db, func() interface{} { return &User{} })
 
 	channel, errChan := table.
 		Query(
@@ -473,7 +487,7 @@ func TestDynamoQueryError(t *testing.T) {
 			nil,
 		).
 		SetScanForward(true).
-		StreamWith(db, &User{})
+		StreamWith(ctx, db, &User{})
 
 	users := []User{}
 SELECT:
@@ -498,9 +512,10 @@ func TestDynamoScan(t *testing.T) {
 
 	table := NewUserTable()
 	db := NewDB()
+	ctx := context.Background()
 
-	err := table.CreateTable().ExecuteWith(db)
-	defer table.DeleteTable().ExecuteWith(db)
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
 
 	assert.Nil(t, err)
 
@@ -514,7 +529,7 @@ func TestDynamoScan(t *testing.T) {
 	ui := []*User{}
 	w := table.BatchWriteItem().PutItems(items...)
 
-	err = w.ExecuteWith(db, func() interface{} {
+	err = w.ExecuteWith(ctx, db, func() interface{} {
 		u := User{}
 		ui = append(ui, &u)
 		return &u
@@ -527,7 +542,7 @@ func TestDynamoScan(t *testing.T) {
 	limit := 1000
 	users := []User{}
 
-	channel, errChan := table.Scan().SetLimit(limit).ExecuteWith(db, &User{})
+	channel, errChan := table.Scan().SetLimit(limit).ExecuteWith(ctx, db, &User{})
 
 SELECT:
 	for {
