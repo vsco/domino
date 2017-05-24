@@ -248,13 +248,15 @@ func TestUpdateItem(t *testing.T) {
 
 	assert.Nil(t, err)
 
+	now := time.Now().UnixNano()
+
 	u := table.
 		UpdateItem(KeyValue{"naveen@email.com", "password"}).
 		SetUpdateExpression(
 			table.loginCount.Increment(1),
-			table.lastLoginDate.SetField(time.Now().UnixNano(), false),
-			table.registrationDate.SetField(time.Now().UnixNano(), true),
-			table.visits.Append(time.Now().UnixNano()),
+			table.lastLoginDate.SetField(now, false),
+			table.registrationDate.SetField(now, true),
+			table.visits.Append(now),
 			table.preferences.RemoveKey("update_email"),
 		)
 
@@ -265,7 +267,11 @@ func TestUpdateItem(t *testing.T) {
 	user, err := g.ExecuteWith(ctx, db, &User{})
 
 	assert.NotNil(t, user)
-
+	du := user.(*User)
+	assert.Equal(t, du.LoginCount, 1)
+	assert.Equal(t, du.RegDate, int64(0))
+	assert.Contains(t, du.Visits, now)
+	assert.NotContains(t, du.Preferences, "update_email")
 }
 
 func TestRemoveAttribute(t *testing.T) {
@@ -314,13 +320,14 @@ func TestPutItem(t *testing.T) {
 	q := table.PutItem(item)
 	err = q.ExecuteWith(ctx, db)
 
+	now := time.Now().UnixNano()
 	v := table.
 		UpdateItem(
 			KeyValue{"joe@email.com", "password"},
 		).
 		SetUpdateExpression(
 			table.loginCount.Increment(1),
-			table.registrationDate.SetField(time.Now().UnixNano(), false),
+			table.registrationDate.SetField(now, false),
 		)
 	err = v.ExecuteWith(ctx, db)
 
@@ -331,6 +338,10 @@ func TestPutItem(t *testing.T) {
 	user, err := g.ExecuteWith(ctx, db, &User{})
 
 	assert.NotNil(t, user)
+	du := user.(*User)
+
+	assert.Equal(t, du.LoginCount, 1)
+	assert.Equal(t, du.RegDate, now)
 }
 
 func TestExpressions(t *testing.T) {
