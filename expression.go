@@ -273,6 +273,16 @@ func (Field *DynamoField) SetField(a interface{}, onlyIfEmpty bool) *UpdateExpre
 	return &UpdateExpression{op: "SET", f: f}
 }
 
+/*RemoveField removes a dynamo Field.*/
+func (Field *DynamoField) RemoveField() *UpdateExpression {
+	f := func(c uint) (string, map[string]interface{}, uint) {
+		m := map[string]interface{}{}
+		c++
+		return Field.name, m, c
+	}
+	return &UpdateExpression{op: "REMOVE", f: f}
+}
+
 /*Add adds an amount to dynamo numeric Field*/
 func (Field *Numeric) Add(amount float64) *UpdateExpression {
 	f := func(c uint) (string, map[string]interface{}, uint) {

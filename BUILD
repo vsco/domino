@@ -35,7 +35,7 @@ go_test(
 genrule(
 	name = "localstack",
 	outs = ["localstack-run-id"],
-	cmd = "docker rm -f localstack || true; docker run -d -p 4567-4576:4567-4576 --name localstack atlassianlabs/localstack > $@",
+	cmd = "docker rm -f localstack || true; docker run -d -p 4567-4576:4567-4576 --name localstack atlassianlabs/localstack:0.4.2 > $@",
 	local = 1,
 	message = "Spinning up localstack container...",
 	visibility = ["//visibility:public"],
