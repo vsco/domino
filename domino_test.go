@@ -268,6 +268,38 @@ func TestUpdateItem(t *testing.T) {
 
 }
 
+func TestRemoveAttribute(t *testing.T) {
+	table := NewUserTable()
+	db := NewDB()
+	ctx := context.Background()
+
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
+
+	assert.Nil(t, err)
+
+	q := table.PutItem(User{Email: "brendanr@email.com", Password: "password", LoginCount: 5})
+	err = q.ExecuteWith(ctx, db)
+	assert.Nil(t, err)
+
+	// remove
+	u := table.
+		UpdateItem(KeyValue{"brendanr@email.com", "password"}).
+		SetUpdateExpression(
+			table.registrationDate.SetField(time.Now().UnixNano(), true),
+			table.loginCount.RemoveField(),
+		)
+	err = u.ExecuteWith(ctx, db)
+	assert.Nil(t, err)
+
+	g := table.GetItem(KeyValue{"brendanr@email.com", "password"})
+	user, err := g.ExecuteWith(ctx, db, &User{})
+	assert.NotNil(t, user)
+
+	du := user.(*User)
+	assert.Equal(t, 0, du.LoginCount)
+}
+
 func TestPutItem(t *testing.T) {
 	table := NewUserTable()
 	db := NewDB()
