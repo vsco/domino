@@ -94,9 +94,9 @@ q := table.
 		KeyValue{"naveen@email.com", "password"},
 	).
 	SetConsistentRead(true)
-r, err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo, &User{}) //Pass in domain object template object
-
-user := r.(*User) //Must cast back to domain object pointer
+r, err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo) //Pass in domain object template object
+fetched := &User{}
+err = dynamodbattribute.UnmarshalMap(r, user)
 
 ```
 

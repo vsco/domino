@@ -27,6 +27,40 @@ type DynamoDBIFace interface {
 	BatchWriteItemWithContext(aws.Context, *dynamodb.BatchWriteItemInput, ...request.Option) (*dynamodb.BatchWriteItemOutput, error)
 }
 
+// Loader is the interface that specifies the ability to deserialize and load data from dynamodb attrbiute value map
+type Loader interface {
+	LoadDynamoDBValue(av map[string]*dynamodb.AttributeValue) (err error)
+}
+
+func deserializeTo(av map[string]*dynamodb.AttributeValue, item interface{}) (err error) {
+	if len(av) <= 0 {
+		return
+	}
+
+	switch t := (item).(type) {
+	case Loader:
+		err = t.LoadDynamoDBValue(av)
+	default:
+		err = dynamodbattribute.UnmarshalMap(av, item)
+	}
+	return
+}
+
+// ToValue is the interface that specifies the ability to serialize data to a value that can be persisted in dynamodb
+type ToValue interface {
+	ToDynamoDBValue() (bm interface{})
+}
+
+func serialize(item interface{}) (err error, av interface{}) {
+	switch t := item.(type) {
+	case ToValue:
+		av = t.ToDynamoDBValue()
+	default:
+		av, err = dynamodbattribute.MarshalMap(item)
+	}
+	return
+}
+
 const (
 	dS    = "S"
 	dSS   = "SS"
@@ -283,6 +317,17 @@ type KeyValue struct {
 /************************************** GetItem ****************************************/
 /***************************************************************************************/
 type get dynamodb.GetItemInput
+type output struct {
+	*dynamodb.GetItemOutput
+	Error error
+}
+
+func (o *output) Result(item interface{}) (err error) {
+	if o.GetItemOutput == nil {
+		return o.Error
+	}
+	return deserializeTo(o.Item, item)
+}
 
 /*GetItem Primary constructor for creating a  get item query*/
 func (table DynamoTable) GetItem(key KeyValue) *get {
@@ -315,19 +360,16 @@ func (d *get) Build() *dynamodb.GetItemInput {
  **
  ** Returns a tuple of the hydrated item struct, or an error
  */
-func (d *get) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, item interface{}, opts ...request.Option) (r interface{}, err error) {
-	out, err := dynamo.GetItemWithContext(ctx, d.Build(), opts...)
+func (d *get) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *output) {
+
+	o, err := dynamo.GetItemWithContext(ctx, d.Build(), opts...)
 	if err != nil {
 		err = handleAwsErr(err)
 		return
 	}
-	if out.Item != nil && len(out.Item) > 0 {
-		r = item
-		err = dynamodbattribute.UnmarshalMap(out.Item, r)
-		if err != nil {
-			err = handleAwsErr(err)
-			return
-		}
+	out = &output{
+		o,
+		nil,
 	}
 
 	return
