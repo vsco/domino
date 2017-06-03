@@ -315,7 +315,13 @@ func TestPutItem(t *testing.T) {
 	assert.NoError(t, err)
 
 	item := User{Email: "joe@email.com", Password: "password"}
-	q := table.PutItem(item)
+	q := table.PutItem(item).SetConditionExpression(
+		And(
+			table.emailField.NotExists(),
+			table.passwordField.NotExists(),
+		),
+	)
+
 	err = q.ExecuteWith(ctx, db)
 
 	v := table.

@@ -509,6 +509,12 @@ func (table DynamoTable) PutItem(i interface{}) *put {
 	return &q
 }
 
+func (d *put) ReturnAllOld() {
+	(*dynamodb.PutItemInput)(d).SetReturnValues("ALL_OLD")
+}
+func (d *put) ReturnNone() {
+	(*dynamodb.PutItemInput)(d).SetReturnValues("NONE")
+}
 func (d *put) SetConditionExpression(c Expression) *put {
 	s, m, _ := c.construct(1, true)
 
@@ -673,6 +679,14 @@ func (table DynamoTable) DeleteItem(key KeyValue) *deleteItem {
 	return &q
 }
 
+func (d *deleteItem) ReturnAllOld() {
+	(*dynamodb.DeleteItemInput)(d).SetReturnValues("ALL_OLD")
+}
+
+func (d *deleteItem) ReturnNone() {
+	(*dynamodb.DeleteItemInput)(d).SetReturnValues("NONE")
+}
+
 func (d *deleteItem) SetConditionExpression(c Expression) *deleteItem {
 	s, m, _ := c.construct(1, true)
 	d.ConditionExpression = &s
@@ -712,6 +726,26 @@ func (table DynamoTable) UpdateItem(key KeyValue) *Update {
 	q := Update{input: dynamodb.UpdateItemInput{TableName: &table.Name}}
 	appendKeyAttribute(&q.input.Key, table, key)
 	return &q
+}
+
+func (d *Update) ReturnAllNew() {
+	d.input.SetReturnValues("ALL_New")
+}
+
+func (d *Update) ReturnAllOld() {
+	d.input.SetReturnValues("ALL_OLD")
+}
+
+func (d *Update) ReturnUpdatedNew() {
+	d.input.SetReturnValues("UPDATED_NEw")
+}
+
+func (d *Update) ReturnUpdatedOld() {
+	d.input.SetReturnValues("UPDATED_OLD")
+}
+
+func (d *Update) ReturnNone() {
+	d.input.SetReturnValues("NONE")
 }
 
 func (d *Update) SetConditionExpression(c Expression) *Update {
