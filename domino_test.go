@@ -388,7 +388,8 @@ func TestExpressions(t *testing.T) {
 	expectedFilter := "begins_with(registrationDate,:t_1) OR contains(lastName,:25_2) OR (NOT contains(registrationDate,:t_3)) OR (size(registrationDate) <=:25_4 AND size(firstName) >=:25_5) OR registrationDate = :test_6 OR registrationDate <= :test_7 OR (registrationDate between :0_8 and :1_9) OR (registrationDate in (:0_10,:1_11))"
 	assert.Equal(t, expectedFilter, *q.Build().FilterExpression)
 
-	channel, errChan := q.StreamWith(ctx, db, User{})
+	channel := make(chan *User)
+	errChan := q.ExecuteWith(ctx, db).StreamWithChannel(channel)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -450,10 +451,15 @@ func TestDynamoQuery(t *testing.T) {
 		SetPageSize(10).
 		SetScanForward(true)
 
-	items, err = q.ExecuteWith(ctx, db, &User{})
+	results := []*User{}
+	err = q.ExecuteWith(ctx, db).Results(func() interface{} {
+		r := &User{}
+		results = append(results, r)
+		return r
+	})
 
 	assert.NoError(t, err)
-	assert.Equal(t, limit, len(items))
+	assert.Equal(t, limit, len(results))
 }
 
 func TestDynamoStreamQuery(t *testing.T) {
@@ -502,7 +508,7 @@ func TestDynamoStreamQuery(t *testing.T) {
 	users := []User{}
 	channel := make(chan *User)
 
-	_ = q.StreamWithChannel(ctx, db, channel)
+	_ = q.ExecuteWith(ctx, db).StreamWithChannel(channel)
 
 	for u := range channel {
 		users = append(users, *u)
@@ -531,21 +537,24 @@ func TestDynamoQueryError(t *testing.T) {
 
 	_ = table.BatchWriteItem().PutItems(items...).ExecuteWith(ctx, db).Results(nil)
 
-	channel, errChan := table.
+	channel := make(chan *User)
+	errChan := table.
 		Query(
 			table.registrationDate.Equals("name@email.com"),
 			nil,
 		).
 		SetScanForward(true).
-		StreamWith(ctx, db, &User{})
+		ExecuteWith(ctx, db).
+		StreamWithChannel(channel)
 
-	users := []User{}
+	users := []interface{}{}
+
 SELECT:
 	for {
 		select {
 		case u := <-channel:
 			if u != nil {
-				users = append(users, *u.(*User))
+				users = append(users, u)
 			} else {
 				break SELECT
 			}
@@ -590,16 +599,17 @@ func TestDynamoScan(t *testing.T) {
 	assert.Empty(t, ui)
 
 	limit := 1000
-	users := []User{}
+	users := []interface{}{}
 
-	channel, errChan := table.Scan().SetLimit(limit).ExecuteWith(ctx, db, &User{})
+	channel := make(chan *User)
+	errChan := table.Scan().SetLimit(limit).ExecuteWith(ctx, db).StreamWithChannel(channel)
 
 SELECT:
 	for {
 		select {
 		case u := <-channel:
 			if u != nil {
-				users = append(users, *u.(*User))
+				users = append(users, u)
 			} else {
 				break SELECT
 			}

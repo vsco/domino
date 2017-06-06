@@ -925,9 +925,10 @@ type QueryInput struct {
 }
 
 type QueryOutput struct {
-	*dynamodb.QueryOutput
-	streamFunc func(c chan interface{}, e chan error) //Function to handle streaming request data
+	outputFunc func() (*dynamodb.QueryOutput, error)
 	Error      error
+	limit      *int64
+	ctx        context.Context
 }
 
 /*QueryInput represents dynamo batch get item call*/
@@ -1029,107 +1030,136 @@ func (d *QueryInput) Build() *dynamodb.QueryInput {
  **
  */
 
-func (d *QueryInput) ExecuteWith(ctx context.Context, dynamodb DynamoDBIFace, opts ...request.Option) (out *QueryOutput) {
+func (d *QueryInput) ExecuteWith(ctx context.Context, db DynamoDBIFace, opts ...request.Option) (out *QueryOutput) {
 
 	out = &QueryOutput{
-		c: c,
-		e: e,
+		ctx:   ctx,
+		limit: d.Limit,
 	}
 
-	out.streamFunc = func(c chan interface{}, e chan error) {
+	q := d.Build()
 
-		var count int64
-	Execute:
-		if d.Limit != nil && count >= *d.Limit {
+	out.outputFunc = func() (o *dynamodb.QueryOutput, err error) {
+		if q == nil {
 			return
 		}
-		out, err := dynamodb.QueryWithContext(ctx, d.Build(), opts...)
+		o, err = db.QueryWithContext(ctx, q, opts...)
 		if err != nil {
-			e <- handleAwsErr(err)
+			err = handleAwsErr(err)
 			return
 		}
-
-		for _, item := range out.Items {
-			// result := reflect.New(t).Interface()
-			// err = dynamodbattribute.UnmarshalMap(item, result)
-
-			// if err != nil {
-			// 	e <- handleAwsErr(err)
-			// 	return
-			// }
-			count++
-			c <- item
-
-			for _, handler := range d.capacityHandlers {
-				handler(out.ConsumedCapacity)
-			}
-
-			if d.Limit != nil && count >= *d.Limit {
-				return
-			}
+		for _, handler := range d.capacityHandlers {
+			handler(o.ConsumedCapacity)
 		}
 
-		if out.LastEvaluatedKey != nil {
-			d.ExclusiveStartKey = out.LastEvaluatedKey
-			goto Execute
+		if o.LastEvaluatedKey != nil {
+			q.ExclusiveStartKey = o.LastEvaluatedKey
+		} else {
+			q = nil
 		}
-
 		return
-	}()
+	}
+
 	return
+
 }
 
 func (o *QueryOutput) Results(next func() interface{}) (err error) {
 	err = o.Error
-	if err != nil || o.QueryOutput == nil || item == nil {
+	if err != nil || o.outputFunc == nil {
 		return
 	}
-	c := make(chan interface)
-STREAM:
+	var count int64
 	for {
-		select {
-		case item, ok := <-o.c:
-			if !ok {
-				break STREAM
-			}
-			item := next()
-			deserializeTo(o.QueryOutput.Attributes, item)
-
-		case err = <-o.e:
-			out.Error = err
-			break STREAM
+		var out *dynamodb.QueryOutput
+		if out, err = o.outputFunc(); err != nil {
+			o.Error = err
+			return
+		} else if out == nil {
+			return
 		}
+
+		for _, av := range out.Items {
+			if o.limit != nil && count >= *o.limit {
+				return
+			}
+			count++
+			item := next()
+			o.Error = deserializeTo(av, item)
+			if err = o.Error; err != nil {
+				return
+			}
+		}
+
 	}
+	return
+}
+
+func (o *QueryOutput) StreamWithChannel(channel interface{}) (errChan chan error) {
+	t := reflect.TypeOf(channel).Elem()
+	isPtr := t.Kind() == reflect.Ptr
+	if isPtr {
+		t = t.Elem()
+	}
+	vc := reflect.ValueOf(channel)
+	errChan = make(chan error)
+
+	go func() {
+		defer close(errChan)
+		defer vc.Close()
+		results := []interface{}{}
+		err := o.Results(func() interface{} {
+			result := reflect.New(t).Interface()
+			results = append(results, result)
+			return result
+		})
+		if err != nil {
+			errChan <- err
+		}
+		for _, result := range results {
+			value := reflect.ValueOf(result)
+			if isPtr {
+				vc.Send(value)
+			} else {
+				vc.Send(reflect.Indirect(value))
+			}
+		}
+	}()
 
 	return
 }
 
-// func (o *QueryOutput) StreamWith
-
 /***************************************************************************************/
 /********************************************** Scan **********************************/
 /***************************************************************************************/
-type Scan struct {
+type ScanInput struct {
 	*dynamodb.ScanInput
 	pageSize *int64
 }
 
-/*Scan represents dynamo scan item call*/
-func (table DynamoTable) Scan() *Scan {
-	var input dynamodb.ScanInput
-	q := Scan{
-		ScanInput: &input,
+type ScanOutput struct {
+	outputFunc func() (*dynamodb.ScanOutput, error)
+	Error      error
+	limit      *int64
+	ctx        context.Context
+}
+
+/*ScanOutput represents dynamo scan item call*/
+func (table DynamoTable) Scan() (q *ScanInput) {
+
+	q = &ScanInput{
+		ScanInput: &dynamodb.ScanInput{},
 	}
 
 	q.TableName = &table.Name
-	return &q
+	return
 }
 
-func (d *Scan) SetConsistentRead(c bool) *Scan {
+func (d *ScanInput) SetConsistentRead(c bool) *ScanInput {
 	(*d).ConsistentRead = &c
 	return d
 }
-func (d *Scan) SetAttributesToGet(fields []DynamoField) *Scan {
+func (d *ScanInput) SetAttributesToGet(fields []DynamoField) *ScanInput {
 	a := make([]*string, len(fields))
 	for i, f := range fields {
 		v := f.Name()
@@ -1139,19 +1169,19 @@ func (d *Scan) SetAttributesToGet(fields []DynamoField) *Scan {
 	return d
 }
 
-func (d *Scan) SetLimit(limit int) *Scan {
+func (d *ScanInput) SetLimit(limit int) *ScanInput {
 	s := int64(limit)
 	d.Limit = &s
 	return d
 }
 
-func (d *Scan) SetPageSize(pageSize int) *Scan {
+func (d *ScanInput) SetPageSize(pageSize int) *ScanInput {
 	ps := int64(pageSize)
 	d.pageSize = &ps
 	return d
 }
 
-func (d *Scan) SetFilterExpression(c Expression) *Scan {
+func (d *ScanInput) SetFilterExpression(c Expression) *ScanInput {
 	s, m, _ := c.construct(1, true)
 	d.FilterExpression = &s
 
@@ -1161,17 +1191,17 @@ func (d *Scan) SetFilterExpression(c Expression) *Scan {
 	return d
 }
 
-func (d *Scan) SetLocalIndex(idx LocalSecondaryIndex) *Scan {
+func (d *ScanInput) SetLocalIndex(idx LocalSecondaryIndex) *ScanInput {
 	d.IndexName = &idx.Name
 	return d
 }
 
-func (d *Scan) SetGlobalIndex(idx GlobalSecondaryIndex) *Scan {
+func (d *ScanInput) SetGlobalIndex(idx GlobalSecondaryIndex) *ScanInput {
 	d.IndexName = &idx.Name
 	return d
 }
 
-func (d *Scan) Build() *dynamodb.ScanInput {
+func (d *ScanInput) Build() *dynamodb.ScanInput {
 	r := dynamodb.ScanInput(*d.ScanInput)
 	if d.pageSize != nil {
 		r.Limit = d.pageSize
@@ -1187,48 +1217,69 @@ func (d *Scan) Build() *dynamodb.ScanInput {
  ** 		   the returned channel.
  **
  */
-func (d *Scan) ExecuteWith(ctx context.Context, dynamodb DynamoDBIFace, nextItem interface{}, opts ...request.Option) (c chan interface{}, e chan error) {
+func (d *ScanInput) ExecuteWith(ctx context.Context, db DynamoDBIFace, opts ...request.Option) (out *ScanOutput) {
 
-	c = make(chan interface{})
-	e = make(chan error)
+	out = &ScanOutput{
+		ctx:   ctx,
+		limit: d.Limit,
+	}
 
-	go func() {
-		defer close(c)
-		defer close(e)
+	q := d.Build()
 
-		var count int64
-	Execute:
-		if d.Limit != nil && count >= *d.Limit {
+	out.outputFunc = func() (o *dynamodb.ScanOutput, err error) {
+		if q == nil {
 			return
 		}
-		out, err := dynamodb.ScanWithContext(ctx, d.Build(), opts...)
+		o, err = db.ScanWithContext(ctx, q, opts...)
 		if err != nil {
-			e <- handleAwsErr(err)
+			err = handleAwsErr(err)
 			return
 		}
 
-		for _, item := range out.Items {
-			err = dynamodbattribute.UnmarshalMap(item, &nextItem)
+		if o.LastEvaluatedKey != nil {
+			q.ExclusiveStartKey = o.LastEvaluatedKey
+		} else {
+			q = nil
+		}
+		return
+	}
 
-			if err != nil {
-				e <- handleAwsErr(err)
+	return
+
+}
+
+func (o *ScanOutput) Results(next func() interface{}) (err error) {
+	err = o.Error
+	if err != nil || o.outputFunc == nil {
+		return
+	}
+	var count int64
+	for {
+		var out *dynamodb.ScanOutput
+		if out, err = o.outputFunc(); err != nil {
+			o.Error = err
+			return
+		} else if out == nil {
+			return
+		}
+
+		for _, av := range out.Items {
+			if o.limit != nil && count >= *o.limit {
 				return
 			}
 			count++
-			c <- nextItem
+			item := next()
+			o.Error = deserializeTo(av, item)
+			if err = o.Error; err != nil {
+				return
+			}
 		}
 
-		if out.LastEvaluatedKey != nil {
-			d.ExclusiveStartKey = out.LastEvaluatedKey
-			goto Execute
-		}
-		return
-	}()
-
+	}
 	return
 }
 
-func (d *Scan) StreamWithChannel(ctx context.Context, dynamodb DynamoDBIFace, channel interface{}, opts ...request.Option) (errChan chan error) {
+func (o *ScanOutput) StreamWithChannel(channel interface{}) (errChan chan error) {
 	t := reflect.TypeOf(channel).Elem()
 	isPtr := t.Kind() == reflect.Ptr
 	if isPtr {
@@ -1238,44 +1289,25 @@ func (d *Scan) StreamWithChannel(ctx context.Context, dynamodb DynamoDBIFace, ch
 	errChan = make(chan error)
 
 	go func() {
-		defer vc.Close()
 		defer close(errChan)
-
-		var count int64
-	Execute:
-		if d.Limit != nil && count >= *d.Limit {
-			return
-		}
-		out, err := dynamodb.ScanWithContext(ctx, d.Build(), opts...)
+		defer vc.Close()
+		results := []interface{}{}
+		err := o.Results(func() interface{} {
+			result := reflect.New(t).Interface()
+			results = append(results, result)
+			return result
+		})
 		if err != nil {
-			errChan <- handleAwsErr(err)
-			return
+			errChan <- err
 		}
-
-		for _, item := range out.Items {
-			nextItem := reflect.New(t).Interface()
-			err = dynamodbattribute.UnmarshalMap(item, nextItem)
-			value := reflect.ValueOf(nextItem)
-			if err != nil {
-				errChan <- handleAwsErr(err)
-				return
-			}
-			count++
+		for _, result := range results {
+			value := reflect.ValueOf(result)
 			if isPtr {
 				vc.Send(value)
 			} else {
 				vc.Send(reflect.Indirect(value))
 			}
-			if d.Limit != nil && count >= *d.Limit {
-				return
-			}
 		}
-
-		if out.LastEvaluatedKey != nil {
-			d.ExclusiveStartKey = out.LastEvaluatedKey
-			goto Execute
-		}
-		return
 	}()
 
 	return
@@ -1521,7 +1553,7 @@ func appendKeyInterface(m *map[string]interface{}, table DynamoTable, key KeyVal
 	}
 
 }
-func appendKeyAttribute(m *DynamoDBValue, table DynamoTable, key KeyValue) (err error) {
+func appendKeyAttribute(m *map[string]*dynamodb.AttributeValue, table DynamoTable, key KeyValue) (err error) {
 	err = appendAttribute(m, table.PartitionKey.Name(), key.PartitionKey)
 	if err != nil {
 		return
@@ -1534,7 +1566,7 @@ func appendKeyAttribute(m *DynamoDBValue, table DynamoTable, key KeyValue) (err 
 	return
 }
 
-func appendAttribute(m *DynamoDBValue, key string, value interface{}) (err error) {
+func appendAttribute(m *map[string]*dynamodb.AttributeValue, key string, value interface{}) (err error) {
 	if *m == nil {
 		*m = make(DynamoDBValue)
 	}
