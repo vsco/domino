@@ -27,12 +27,14 @@ type DynamoDBIFace interface {
 	BatchWriteItemWithContext(aws.Context, *dynamodb.BatchWriteItemInput, ...request.Option) (*dynamodb.BatchWriteItemOutput, error)
 }
 
+type DynamoDBValue map[string]*dynamodb.AttributeValue
+
 // Loader is the interface that specifies the ability to deserialize and load data from dynamodb attrbiute value map
 type Loader interface {
-	LoadDynamoDBValue(av map[string]*dynamodb.AttributeValue) (err error)
+	LoadDynamoDBValue(av DynamoDBValue) (err error)
 }
 
-func deserializeTo(av map[string]*dynamodb.AttributeValue, item interface{}) (err error) {
+func deserializeTo(av DynamoDBValue, item interface{}) (err error) {
 	if len(av) <= 0 {
 		return
 	}
@@ -313,25 +315,21 @@ type KeyValue struct {
 	RangeKey     interface{}
 }
 
+type TableName string
+type Keys *dynamodb.KeysAndAttributes
+
 /***************************************************************************************/
 /************************************** GetItem ****************************************/
 /***************************************************************************************/
-type get dynamodb.GetItemInput
-type output struct {
+type getInput dynamodb.GetItemInput
+type getOutput struct {
 	*dynamodb.GetItemOutput
 	Error error
 }
 
-func (o *output) Result(item interface{}) (err error) {
-	if o.GetItemOutput == nil {
-		return o.Error
-	}
-	return deserializeTo(o.Item, item)
-}
-
 /*GetItem Primary constructor for creating a  get item query*/
-func (table DynamoTable) GetItem(key KeyValue) *get {
-	q := get(dynamodb.GetItemInput{})
+func (table DynamoTable) GetItem(key KeyValue) *getInput {
+	q := getInput(dynamodb.GetItemInput{})
 	q.TableName = &table.Name
 	appendAttribute(&q.Key, table.PartitionKey.Name(), key.PartitionKey)
 	if !table.RangeKey.IsEmpty() {
@@ -341,12 +339,17 @@ func (table DynamoTable) GetItem(key KeyValue) *get {
 }
 
 /*SetConsistentRead ... */
-func (d *get) SetConsistentRead(c bool) *get {
-	(*d).ConsistentRead = &c
+func (d *getInput) SetConsistentRead(c bool) *getInput {
+	d.ConsistentRead = &c
 	return d
 }
 
-func (d *get) Build() *dynamodb.GetItemInput {
+func (d *getInput) SetProjectionExpression(exp string) *getInput {
+	d.ProjectionExpression = &exp
+	return d
+}
+
+func (d *getInput) Build() *dynamodb.GetItemInput {
 	r := dynamodb.GetItemInput(*d)
 	r.ReturnConsumedCapacity = aws.String("INDEXES")
 	return &r
@@ -360,14 +363,14 @@ func (d *get) Build() *dynamodb.GetItemInput {
  **
  ** Returns a tuple of the hydrated item struct, or an error
  */
-func (d *get) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *output) {
+func (d *getInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *getOutput) {
 
 	o, err := dynamo.GetItemWithContext(ctx, d.Build(), opts...)
 	if err != nil {
 		err = handleAwsErr(err)
 		return
 	}
-	out = &output{
+	out = &getOutput{
 		o,
 		nil,
 	}
@@ -375,20 +378,29 @@ func (d *get) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...req
 	return
 }
 
-type TableName string
-type Keys *dynamodb.KeysAndAttributes
+func (o *getOutput) Result(item interface{}) (err error) {
+	err = o.Error
+	if o.GetItemOutput == nil || o.Error != nil || item == nil {
+		return
+	}
+	return deserializeTo(o.Item, item)
+}
 
 /***************************************************************************************/
 /************************************** BatchGetItem ***********************************/
 /***************************************************************************************/
-type batchGet struct {
+type batchGetInput struct {
 	input *[]*dynamodb.BatchGetItemInput
 	/*A set of mutational operations that might error out, i.e. not pure, and therefore not conducive to a fluent dsl*/
 	delayedFunctions []func() error
 }
+type batchGetOutput struct {
+	results []*dynamodb.BatchGetItemOutput
+	Error   error
+}
 
 /*BatchGetItem represents dynamo batch get item call*/
-func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
+func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGetInput {
 	/*Delay the attribute value construction, until Build time*/
 	input := &[]*dynamodb.BatchGetItemInput{}
 	delayed := func() error {
@@ -432,15 +444,15 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGet {
 		return nil
 	}
 
-	q := batchGet{
+	q := &batchGetInput{
 		input:            input,
 		delayedFunctions: []func() error{delayed},
 	}
 
-	return &q
+	return q
 }
 
-func (d *batchGet) Build() (input []*dynamodb.BatchGetItemInput, err error) {
+func (d *batchGetInput) Build() (input []*dynamodb.BatchGetItemInput, err error) {
 	for _, function := range d.delayedFunctions {
 		err = function()
 		if err != nil {
@@ -458,73 +470,91 @@ func (d *batchGet) Build() (input []*dynamodb.BatchGetItemInput, err error) {
 /**
  ** ExecuteWith ... Execute a dynamo BatchGetItem call with a passed in dynamodb instance and next item pointer
  ** dynamo - The underlying dynamodb api
- ** nextItem - The item pointer function, which is called on each new object returned from dynamodb. The function should
- ** 		   store each item in an array before returning.
  **
  */
-func (d *batchGet) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, nextItem func() interface{}, opts ...request.Option) error {
+func (d *batchGetInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *batchGetOutput) {
+	out = &batchGetOutput{}
+	var input []*dynamodb.BatchGetItemInput
 
-	input, err := d.Build()
-	if err != nil {
-		return err
+	if input, out.Error = d.Build(); out.Error != nil {
+		return
 	}
+
 	for _, bg := range input {
 		retry := 0
 	Execute:
-
-		out, err := dynamo.BatchGetItemWithContext(ctx, bg, opts...)
-
-		if err != nil {
-			return handleAwsErr(err)
+		var result *dynamodb.BatchGetItemOutput
+		if result, out.Error = dynamo.BatchGetItemWithContext(ctx, bg, opts...); out.Error != nil {
+			out.Error = handleAwsErr(out.Error)
+			return
 		}
-		for _, r := range out.Responses {
-			for _, item := range r {
+		out.results = append(out.results, result)
+
+		if result.UnprocessedKeys != nil && len(result.UnprocessedKeys) > 0 {
+			bg.RequestItems = result.UnprocessedKeys
+			retry++
+			goto Execute
+		}
+	}
+
+	return
+}
+
+/** Results ... Deserialize the results using a user provided target object generator function
+ ** nextItem - The item pointer function, which is called on each new object returned from dynamodb. The function should
+ ** 		   store each item in an array before returning.
+ **/
+
+func (o *batchGetOutput) Results(nextItem func() interface{}) (err error) {
+	err = o.Error
+	if o.Error != nil || nextItem == nil {
+		return
+	}
+	for _, result := range o.results {
+		for _, items := range result.Responses {
+			for _, item := range items {
 				err = dynamodbattribute.UnmarshalMap(item, nextItem())
 				if err != nil {
 					return handleAwsErr(err)
 				}
 			}
 		}
-		if out.UnprocessedKeys != nil && len(out.UnprocessedKeys) > 0 {
-			bg.RequestItems = out.UnprocessedKeys
-			retry++
-			goto Execute
-		}
 	}
-
-	return nil
+	return
 }
 
 /***************************************************************************************/
 /************************************** PutItem ****************************************/
 /***************************************************************************************/
-type put dynamodb.PutItemInput
+type putInput dynamodb.PutItemInput
+type putOutput struct {
+	*dynamodb.PutItemOutput
+	Error error
+}
 
 /*PutItem represents dynamo put item call*/
-func (table DynamoTable) PutItem(i interface{}) *put {
-
-	q := put(dynamodb.PutItemInput{})
+func (table DynamoTable) PutItem(i interface{}) *putInput {
+	q := putInput(dynamodb.PutItemInput{})
 	q.TableName = &table.Name
 	q.Item, _ = dynamodbattribute.MarshalMap(i)
 	return &q
 }
 
-func (d *put) ReturnAllOld() {
+func (d *putInput) ReturnAllOld() {
 	(*dynamodb.PutItemInput)(d).SetReturnValues("ALL_OLD")
 }
-func (d *put) ReturnNone() {
+func (d *putInput) ReturnNone() {
 	(*dynamodb.PutItemInput)(d).SetReturnValues("NONE")
 }
-func (d *put) SetConditionExpression(c Expression) *put {
+func (d *putInput) SetConditionExpression(c Expression) *putInput {
 	s, m, _ := c.construct(1, true)
-
 	d.ConditionExpression = &s
 	d.ExpressionAttributeValues, _ = dynamodbattribute.MarshalMap(m)
 
 	return d
 }
 
-func (d *put) Build() *dynamodb.PutItemInput {
+func (d *putInput) Build() *dynamodb.PutItemInput {
 	r := dynamodb.PutItemInput(*d)
 	return &r
 }
@@ -535,33 +565,50 @@ func (d *put) Build() *dynamodb.PutItemInput {
  ** dynamo - The underlying dynamodb api
  **
  */
-func (d *put) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) error {
-	_, err := dynamo.PutItemWithContext(ctx, d.Build(), opts...)
-	if err != nil {
-		return handleAwsErr(err)
+func (d *putInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *putOutput) {
+	out = &putOutput{}
+	if result, err := dynamo.PutItemWithContext(ctx, d.Build(), opts...); err != nil {
+		out.Error = handleAwsErr(err)
+	} else {
+		out.PutItemOutput = result
 	}
-	return nil
+
+	return
+}
+
+func (o *putOutput) Result(item interface{}) (err error) {
+	err = o.Error
+	if err != nil || o.PutItemOutput == nil || item == nil {
+		return
+	}
+	deserializeTo(o.PutItemOutput.Attributes, item)
+	return
 }
 
 /***************************************************************************************/
-/************************************** BatchPutItem *********************************/
+/************************************** BatchWriteItem *********************************/
 /***************************************************************************************/
-type batchPut struct {
+type batchWriteInput struct {
 	batches          []dynamodb.BatchWriteItemInput
 	table            DynamoTable
 	delayedFunctions []func() error
 }
+type batchPutOutput struct {
+	results []*dynamodb.BatchWriteItemOutput
+
+	Error error
+}
 
 /*BatchWriteItem represents dynamo batch write item call*/
-func (table DynamoTable) BatchWriteItem() *batchPut {
-	r := batchPut{
+func (table DynamoTable) BatchWriteItem() *batchWriteInput {
+	r := batchWriteInput{
 		batches: []dynamodb.BatchWriteItemInput{},
 		table:   table,
 	}
 	return &r
 }
 
-func (d *batchPut) writeItems(putOnly bool, items ...interface{}) *batchPut {
+func (d *batchWriteInput) writeItems(putOnly bool, items ...interface{}) *batchWriteInput {
 	delayed := func() error {
 		batches := []dynamodb.BatchWriteItemInput{}
 		batchCount := len(items)/25 + 1
@@ -608,11 +655,11 @@ func (d *batchPut) writeItems(putOnly bool, items ...interface{}) *batchPut {
 	return d
 }
 
-func (d *batchPut) PutItems(items ...interface{}) *batchPut {
+func (d *batchWriteInput) PutItems(items ...interface{}) *batchWriteInput {
 	d.writeItems(true, items...)
 	return d
 }
-func (d *batchPut) DeleteItems(keys ...KeyValue) *batchPut {
+func (d *batchWriteInput) DeleteItems(keys ...KeyValue) *batchWriteInput {
 	a := []interface{}{}
 	for _, key := range keys {
 		m := map[string]interface{}{}
@@ -623,7 +670,7 @@ func (d *batchPut) DeleteItems(keys ...KeyValue) *batchPut {
 	return d
 }
 
-func (d *batchPut) Build() (input []dynamodb.BatchWriteItemInput, err error) {
+func (d *batchWriteInput) Build() (input []dynamodb.BatchWriteItemInput, err error) {
 	for _, function := range d.delayedFunctions {
 		if err = function(); err != nil {
 			return
@@ -641,60 +688,77 @@ func (d *batchPut) Build() (input []dynamodb.BatchWriteItemInput, err error) {
  ** 				The function should store each item pointer in an array before returning.
  **
  */
-func (d *batchPut) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, unprocessedItem func() interface{}, opts ...request.Option) error {
+func (d *batchWriteInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *batchPutOutput) {
+	out = &batchPutOutput{}
 
 	batches, err := d.Build()
 	if err != nil {
-		return err
+		out.Error = err
+		return
 	}
 	for _, batch := range batches {
-		out, err := dynamo.BatchWriteItemWithContext(ctx, &batch, opts...)
+		result, err := dynamo.BatchWriteItemWithContext(ctx, &batch, opts...)
 		if err != nil {
-			return handleAwsErr(err)
+			out.Error = handleAwsErr(err)
+			return
 		}
+		out.results = append(out.results, result)
+	}
 
-		for _, items := range out.UnprocessedItems {
+	return
+}
+
+func (d *batchPutOutput) Results(unprocessedItem func() interface{}) (err error) {
+	err = d.Error
+	if err != nil || d.results == nil || unprocessedItem == nil {
+		return
+	}
+	for _, result := range d.results {
+		for _, items := range result.UnprocessedItems {
 			for _, item := range items {
-				err = dynamodbattribute.UnmarshalMap(item.PutRequest.Item, unprocessedItem())
-				if err != nil {
-					return handleAwsErr(err)
+				if err = dynamodbattribute.UnmarshalMap(item.PutRequest.Item, unprocessedItem()); err != nil {
+					err = handleAwsErr(err)
+					return
 				}
 			}
 		}
 	}
-
-	return nil
+	return
 }
 
 /***************************************************************************************/
 /*************************************** DeleteItem ************************************/
 /***************************************************************************************/
-type deleteItem dynamodb.DeleteItemInput
+type deleteItemInput dynamodb.DeleteItemInput
+type deleteItemOutput struct {
+	*dynamodb.DeleteItemOutput
+	Error error
+}
 
-/*DeleteItem represents dynamo delete item call*/
-func (table DynamoTable) DeleteItem(key KeyValue) *deleteItem {
-	q := deleteItem(dynamodb.DeleteItemInput{})
+/*DeleteItemInput represents dynamo delete item call*/
+func (table DynamoTable) DeleteItem(key KeyValue) *deleteItemInput {
+	q := deleteItemInput(dynamodb.DeleteItemInput{})
 	q.TableName = &table.Name
 	appendKeyAttribute(&q.Key, table, key)
 	return &q
 }
 
-func (d *deleteItem) ReturnAllOld() {
+func (d *deleteItemInput) ReturnAllOld() {
 	(*dynamodb.DeleteItemInput)(d).SetReturnValues("ALL_OLD")
 }
 
-func (d *deleteItem) ReturnNone() {
+func (d *deleteItemInput) ReturnNone() {
 	(*dynamodb.DeleteItemInput)(d).SetReturnValues("NONE")
 }
 
-func (d *deleteItem) SetConditionExpression(c Expression) *deleteItem {
+func (d *deleteItemInput) SetConditionExpression(c Expression) *deleteItemInput {
 	s, m, _ := c.construct(1, true)
 	d.ConditionExpression = &s
 	d.ExpressionAttributeValues, _ = dynamodbattribute.MarshalMap(m)
 	return d
 }
 
-func (d *deleteItem) Build() *dynamodb.DeleteItemInput {
+func (d *deleteItemInput) Build() *dynamodb.DeleteItemInput {
 	r := dynamodb.DeleteItemInput(*d)
 	return &r
 }
@@ -705,50 +769,67 @@ func (d *deleteItem) Build() *dynamodb.DeleteItemInput {
  ** dynamo - The underlying dynamodb api
  **
  */
-func (d *deleteItem) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) error {
-	_, err := dynamo.DeleteItemWithContext(ctx, d.Build(), opts...)
+func (d *deleteItemInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *deleteItemOutput) {
+	out = &deleteItemOutput{}
+	result, err := dynamo.DeleteItemWithContext(ctx, d.Build(), opts...)
 	if err != nil {
-		return handleAwsErr(err)
+		out.Error = handleAwsErr(err)
+		return
 	}
-	return nil
+	out.DeleteItemOutput = result
+	return
+}
+
+func (o *deleteItemOutput) Result(item interface{}) (err error) {
+	err = o.Error
+	if err != nil || o.DeleteItemOutput == nil || item == nil {
+		return
+	}
+	deserializeTo(o.DeleteItemOutput.Attributes, item)
+	return
 }
 
 /***************************************************************************************/
 /*********************************** UpdateItem ****************************************/
 /***************************************************************************************/
-type Update struct {
+type UpdateInput struct {
 	input            dynamodb.UpdateItemInput
 	delayedFunctions []func() error
 }
 
-/*UpdateItem represents dynamo batch get item call*/
-func (table DynamoTable) UpdateItem(key KeyValue) *Update {
-	q := Update{input: dynamodb.UpdateItemInput{TableName: &table.Name}}
-	appendKeyAttribute(&q.input.Key, table, key)
-	return &q
+type UpdateOutput struct {
+	*dynamodb.UpdateItemOutput
+	Error error
 }
 
-func (d *Update) ReturnAllNew() {
-	d.input.SetReturnValues("ALL_New")
+/*UpdateInputItem represents dynamo batch get item call*/
+func (table DynamoTable) UpdateItem(key KeyValue) *UpdateInput {
+	q := &UpdateInput{input: dynamodb.UpdateItemInput{TableName: &table.Name}}
+	appendKeyAttribute(&(q.input.Key), table, key)
+	return q
 }
 
-func (d *Update) ReturnAllOld() {
+func (d *UpdateInput) ReturnAllNew() {
+	d.input.SetReturnValues("ALL_NEW")
+}
+
+func (d *UpdateInput) ReturnAllOld() {
 	d.input.SetReturnValues("ALL_OLD")
 }
 
-func (d *Update) ReturnUpdatedNew() {
-	d.input.SetReturnValues("UPDATED_NEw")
+func (d *UpdateInput) ReturnUpdatedNew() {
+	d.input.SetReturnValues("UPDATED_NEW")
 }
 
-func (d *Update) ReturnUpdatedOld() {
+func (d *UpdateInput) ReturnUpdatedOld() {
 	d.input.SetReturnValues("UPDATED_OLD")
 }
 
-func (d *Update) ReturnNone() {
+func (d *UpdateInput) ReturnNone() {
 	d.input.SetReturnValues("NONE")
 }
 
-func (d *Update) SetConditionExpression(c Expression) *Update {
+func (d *UpdateInput) SetConditionExpression(c Expression) *UpdateInput {
 	delayed := func() error {
 		s, m, _ := c.construct(1, true)
 		d.input.ConditionExpression = &s
@@ -757,7 +838,7 @@ func (d *Update) SetConditionExpression(c Expression) *Update {
 			return err
 		}
 		if d.input.ExpressionAttributeValues == nil {
-			d.input.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
+			d.input.ExpressionAttributeValues = make(DynamoDBValue)
 		}
 		for k, v := range ea {
 			d.input.ExpressionAttributeValues[k] = v
@@ -768,7 +849,7 @@ func (d *Update) SetConditionExpression(c Expression) *Update {
 	return d
 }
 
-func (d *Update) SetUpdateExpression(exprs ...*UpdateExpression) *Update {
+func (d *UpdateInput) SetUpdateExpression(exprs ...*UpdateExpression) *UpdateInput {
 	m := make(map[string]interface{})
 	ms := make(map[string]string)
 
@@ -797,7 +878,7 @@ func (d *Update) SetUpdateExpression(exprs ...*UpdateExpression) *Update {
 		panic(err)
 	}
 	if d.input.ExpressionAttributeValues == nil {
-		d.input.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
+		d.input.ExpressionAttributeValues = make(DynamoDBValue)
 	}
 	for k, v := range ea {
 		d.input.ExpressionAttributeValues[k] = v
@@ -805,7 +886,7 @@ func (d *Update) SetUpdateExpression(exprs ...*UpdateExpression) *Update {
 	return d
 }
 
-func (d *Update) Build() *dynamodb.UpdateItemInput {
+func (d *UpdateInput) Build() *dynamodb.UpdateItemInput {
 	r := dynamodb.UpdateItemInput((*d).input)
 	return &r
 }
@@ -816,28 +897,43 @@ func (d *Update) Build() *dynamodb.UpdateItemInput {
  ** dynamo - The underlying dynamodb api
  **
  */
-func (d *Update) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) error {
+func (d *UpdateInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *UpdateOutput) {
+	out = &UpdateOutput{}
 	_, err := dynamo.UpdateItemWithContext(ctx, d.Build(), opts...)
 	if err != nil {
-		return handleAwsErr(err)
+		out.Error = handleAwsErr(err)
+		return
 	}
-	return nil
+	return
+}
+func (o *UpdateOutput) Result(item interface{}) (err error) {
+	err = o.Error
+	if err != nil || o.UpdateItemOutput == nil || item == nil {
+		return
+	}
+	deserializeTo(o.UpdateItemOutput.Attributes, item)
+	return
 }
 
 /***************************************************************************************/
 /********************************************** Query **********************************/
 /***************************************************************************************/
-type Query struct {
+type QueryInput struct {
 	*dynamodb.QueryInput
 	pageSize         *int64
 	capacityHandlers []func(*dynamodb.ConsumedCapacity)
 }
 
-/*Query represents dynamo batch get item call*/
-func (table DynamoTable) Query(partitionKeyCondition KeyCondition, rangeKeyCondition *KeyCondition) *Query {
-	var input dynamodb.QueryInput
-	q := Query{
-		QueryInput: &input,
+type QueryOutput struct {
+	*dynamodb.QueryOutput
+	streamFunc func(c chan interface{}, e chan error) //Function to handle streaming request data
+	Error      error
+}
+
+/*QueryInput represents dynamo batch get item call*/
+func (table DynamoTable) Query(partitionKeyCondition KeyCondition, rangeKeyCondition *KeyCondition) *QueryInput {
+	q := QueryInput{
+		QueryInput: &dynamodb.QueryInput{},
 	}
 
 	var e Expression
@@ -857,11 +953,11 @@ func (table DynamoTable) Query(partitionKeyCondition KeyCondition, rangeKeyCondi
 	return &q
 }
 
-func (d *Query) SetConsistentRead(c bool) *Query {
+func (d *QueryInput) SetConsistentRead(c bool) *QueryInput {
 	(*d).ConsistentRead = &c
 	return d
 }
-func (d *Query) SetAttributesToGet(fields []DynamoField) *Query {
+func (d *QueryInput) SetAttributesToGet(fields []DynamoField) *QueryInput {
 	a := make([]*string, len(fields))
 	for i, f := range fields {
 		v := f.Name()
@@ -871,30 +967,30 @@ func (d *Query) SetAttributesToGet(fields []DynamoField) *Query {
 	return d
 }
 
-func (d *Query) SetLimit(limit int) *Query {
+func (d *QueryInput) SetLimit(limit int) *QueryInput {
 	s := int64(limit)
 	d.Limit = &s
 	return d
 }
 
-func (d *Query) SetPageSize(pageSize int) *Query {
+func (d *QueryInput) SetPageSize(pageSize int) *QueryInput {
 	ps := int64(pageSize)
 	d.pageSize = &ps
 	return d
 }
 
-func (d *Query) SetScanForward(forward bool) *Query {
+func (d *QueryInput) SetScanForward(forward bool) *QueryInput {
 	d.ScanIndexForward = &forward
 	return d
 }
 
-func (d *Query) WithConsumedCapacityHandler(f func(*dynamodb.ConsumedCapacity)) *Query {
+func (d *QueryInput) WithConsumedCapacityHandler(f func(*dynamodb.ConsumedCapacity)) *QueryInput {
 	d.ReturnConsumedCapacity = aws.String("INDEXES")
 	d.capacityHandlers = append(d.capacityHandlers, f)
 	return d
 }
 
-func (d *Query) SetFilterExpression(c Expression) *Query {
+func (d *QueryInput) SetFilterExpression(c Expression) *QueryInput {
 	s, m, _ := c.construct(1, true)
 	d.FilterExpression = &s
 
@@ -904,17 +1000,17 @@ func (d *Query) SetFilterExpression(c Expression) *Query {
 	return d
 }
 
-func (d *Query) SetLocalIndex(idx LocalSecondaryIndex) *Query {
+func (d *QueryInput) SetLocalIndex(idx LocalSecondaryIndex) *QueryInput {
 	d.IndexName = &idx.Name
 	return d
 }
 
-func (d *Query) SetGlobalIndex(idx GlobalSecondaryIndex) *Query {
+func (d *QueryInput) SetGlobalIndex(idx GlobalSecondaryIndex) *QueryInput {
 	d.IndexName = &idx.Name
 	return d
 }
 
-func (d *Query) Build() *dynamodb.QueryInput {
+func (d *QueryInput) Build() *dynamodb.QueryInput {
 	r := dynamodb.QueryInput(*d.QueryInput)
 	if d.pageSize != nil {
 		r.Limit = d.pageSize
@@ -932,16 +1028,15 @@ func (d *Query) Build() *dynamodb.QueryInput {
  ** 			returned channel.
  **
  */
-func (d *Query) StreamWith(ctx context.Context, dynamodb DynamoDBIFace, nextItem interface{}, opts ...request.Option) (c chan interface{}, e chan error) {
-	v := reflect.ValueOf(nextItem)
-	t := reflect.Indirect(v).Type()
 
-	c = make(chan interface{})
-	e = make(chan error)
+func (d *QueryInput) ExecuteWith(ctx context.Context, dynamodb DynamoDBIFace, opts ...request.Option) (out *QueryOutput) {
 
-	go func() {
-		defer close(c)
-		defer close(e)
+	out = &QueryOutput{
+		c: c,
+		e: e,
+	}
+
+	out.streamFunc = func(c chan interface{}, e chan error) {
 
 		var count int64
 	Execute:
@@ -955,15 +1050,15 @@ func (d *Query) StreamWith(ctx context.Context, dynamodb DynamoDBIFace, nextItem
 		}
 
 		for _, item := range out.Items {
-			result := reflect.New(t).Interface()
-			err = dynamodbattribute.UnmarshalMap(item, result)
+			// result := reflect.New(t).Interface()
+			// err = dynamodbattribute.UnmarshalMap(item, result)
 
-			if err != nil {
-				e <- handleAwsErr(err)
-				return
-			}
+			// if err != nil {
+			// 	e <- handleAwsErr(err)
+			// 	return
+			// }
 			count++
-			c <- result
+			c <- item
 
 			for _, handler := range d.capacityHandlers {
 				handler(out.ConsumedCapacity)
@@ -981,92 +1076,35 @@ func (d *Query) StreamWith(ctx context.Context, dynamodb DynamoDBIFace, nextItem
 
 		return
 	}()
-
 	return
 }
 
-func (d *Query) StreamWithChannel(ctx context.Context, dynamodb DynamoDBIFace, channel interface{}, opts ...request.Option) (errChan chan error) {
-	t := reflect.TypeOf(channel).Elem()
-	isPtr := t.Kind() == reflect.Ptr
-	if isPtr {
-		t = t.Elem()
+func (o *QueryOutput) Results(next func() interface{}) (err error) {
+	err = o.Error
+	if err != nil || o.QueryOutput == nil || item == nil {
+		return
 	}
-	vc := reflect.ValueOf(channel)
-	errChan = make(chan error)
-
-	go func() {
-		defer vc.Close()
-		defer close(errChan)
-
-		var count int64
-	Execute:
-		if d.Limit != nil && count >= *d.Limit {
-			return
-		}
-		out, err := dynamodb.QueryWithContext(ctx, d.Build(), opts...)
-		if err != nil {
-			errChan <- handleAwsErr(err)
-			return
-		}
-
-		for _, item := range out.Items {
-			result := reflect.New(t).Interface()
-			err = dynamodbattribute.UnmarshalMap(item, result)
-
-			if err != nil {
-				errChan <- handleAwsErr(err)
-				return
-			}
-
-			value := reflect.ValueOf(result)
-
-			count++
-			if isPtr {
-				vc.Send(value)
-			} else {
-				vc.Send(reflect.Indirect(value))
-			}
-
-			for _, handler := range d.capacityHandlers {
-				handler(out.ConsumedCapacity)
-			}
-
-			if d.Limit != nil && count >= *d.Limit {
-				return
-			}
-		}
-
-		if out.LastEvaluatedKey != nil {
-			d.ExclusiveStartKey = out.LastEvaluatedKey
-			goto Execute
-		}
-		return
-	}()
-
-	return
-}
-
-func (d *Query) ExecuteWith(ctx context.Context, dynamodb DynamoDBIFace, nextItem interface{}, opts ...request.Option) (items []interface{}, err error) {
-	c, e := d.StreamWith(ctx, dynamodb, nextItem, opts...)
-	items = []interface{}{}
-
+	c := make(chan interface)
 STREAM:
 	for {
 		select {
-		case item, ok := <-c:
+		case item, ok := <-o.c:
 			if !ok {
 				break STREAM
 			}
+			item := next()
+			deserializeTo(o.QueryOutput.Attributes, item)
 
-			items = append(items, item)
-
-		case err = <-e:
+		case err = <-o.e:
+			out.Error = err
 			break STREAM
 		}
 	}
 
-	return items, err
+	return
 }
+
+// func (o *QueryOutput) StreamWith
 
 /***************************************************************************************/
 /********************************************** Scan **********************************/
@@ -1483,7 +1521,7 @@ func appendKeyInterface(m *map[string]interface{}, table DynamoTable, key KeyVal
 	}
 
 }
-func appendKeyAttribute(m *map[string]*dynamodb.AttributeValue, table DynamoTable, key KeyValue) (err error) {
+func appendKeyAttribute(m *DynamoDBValue, table DynamoTable, key KeyValue) (err error) {
 	err = appendAttribute(m, table.PartitionKey.Name(), key.PartitionKey)
 	if err != nil {
 		return
@@ -1496,9 +1534,9 @@ func appendKeyAttribute(m *map[string]*dynamodb.AttributeValue, table DynamoTabl
 	return
 }
 
-func appendAttribute(m *map[string]*dynamodb.AttributeValue, key string, value interface{}) (err error) {
+func appendAttribute(m *DynamoDBValue, key string, value interface{}) (err error) {
 	if *m == nil {
-		*m = make(map[string]*dynamodb.AttributeValue)
+		*m = make(DynamoDBValue)
 	}
 	v, err := dynamodbattribute.Marshal(value)
 	if err == nil {
