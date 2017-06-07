@@ -84,6 +84,7 @@ q := table.
 	SetConditionExpression(
 		table.PartitionKey.NotExists()
 	)
+
 out := dynamo.PutItem(q).ExecuteWith(dynamo)
 ```
 
@@ -94,6 +95,7 @@ q := table.
 		KeyValue{"naveen@email.com", "password"},
 	).
 	SetConsistentRead(true)
+
 user := &User{}
 err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo).Result(user) //Pass in domain object template object
 
@@ -113,7 +115,7 @@ q := table.
 		table.vists.RemoveElemIndex(0),
 		table.preferences.RemoveKey("update_email"),
 	)
-err = dynamo.UpdateItem(q).ExecuteWith(dynamo)
+err = dynamo.UpdateItem(q).ExecuteWith(dynamo).Result(nil)
 ```
 
 Batch Get Item
@@ -126,7 +128,7 @@ q := table.
 	SetConsistentRead(true)
 
 	users := []*User{} //Set of unprocessed items (if any), returned by dynamo
-	q.ExecuteWith(db).Results(func() interface{} {
+	q.ExecuteWith(db).Result(func() interface{} {
 		user := User{}
 		users = append(users, &user)
 		return &user
@@ -173,6 +175,7 @@ Streaming Results - Allows for lazy data fetching and consuming
 	channel := make(chan *User)
 	errChan := q.ExecuteWith(ctx, db).StreamWithChannel(channel)
 	users := []*User{}
+  
 	for {
 		select {
 		case u, ok := <-channel:
