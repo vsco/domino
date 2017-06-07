@@ -84,7 +84,7 @@ q := table.
 	SetConditionExpression(
 		table.PartitionKey.NotExists()
 	)
-err := dynamo.PutItem(q).ExecuteWith(dynamo)
+out := dynamo.PutItem(q).ExecuteWith(dynamo)
 ```
 
 GetItem
@@ -94,9 +94,8 @@ q := table.
 		KeyValue{"naveen@email.com", "password"},
 	).
 	SetConsistentRead(true)
-r, err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo, &User{}) //Pass in domain object template object
-
-user := r.(*User) //Must cast back to domain object pointer
+user := &User{}
+err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo).Result(user) //Pass in domain object template object
 
 ```
 
@@ -127,7 +126,7 @@ q := table.
 	SetConsistentRead(true)
 
 	users := []*User{} //Set of unprocessed items (if any), returned by dynamo
-	q.ExecuteWith(db, func() interface{} {
+	q.ExecuteWith(db).Results(func() interface{} {
 		user := User{}
 		users = append(users, &user)
 		return &user
@@ -171,13 +170,14 @@ Streaming Results
 		SetLimit(100).
 		SetScanForward(true)
 
-	channel, errChan := q.StreamWith(db, &User{})
+	channel := make(chan *User)
+	errChan := q.ExecuteWith(ctx, db).StreamWith(channel)
 	users := []*User{}
 	for {
 		select {
 		case u, ok := <-channel:
 			if ok {
-				users = append(users, u.(*User))
+				users = append(users, u)
 			}
 		case err = <-errChan:
 
