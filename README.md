@@ -84,7 +84,7 @@ q := table.
 	SetConditionExpression(
 		table.PartitionKey.NotExists()
 	)
-err := dynamo.PutItem(q).ExecuteWith(dynamo)
+err := dynamo.PutItem(q).ExecuteWith(dynamo).Result(nil)
 ```
 
 GetItem
@@ -94,9 +94,8 @@ q := table.
 		KeyValue{"naveen@email.com", "password"},
 	).
 	SetConsistentRead(true)
-r, err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo) //Pass in domain object template object
 fetched := &User{}
-err = dynamodbattribute.UnmarshalMap(r, user)
+_, err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo).Result(fetched) //Pass in domain object template object
 
 ```
 
@@ -114,7 +113,7 @@ q := table.
 		table.vists.RemoveElemIndex(0),
 		table.preferences.RemoveKey("update_email"),
 	)
-err = dynamo.UpdateItem(q).ExecuteWith(dynamo)
+err = dynamo.UpdateItem(q).ExecuteWith(dynamo).Result(nil)
 ```
 
 Batch Get Item
@@ -127,7 +126,7 @@ q := table.
 	SetConsistentRead(true)
 
 	users := []*User{} //Set of unprocessed items (if any), returned by dynamo
-	q.ExecuteWith(db, func() interface{} {
+	q.ExecuteWith(db).Result(func() interface{} {
 		user := User{}
 		users = append(users, &user)
 		return &user
@@ -170,8 +169,9 @@ Streaming Results
 		).
 		SetLimit(100).
 		SetScanForward(true)
-
-	channel, errChan := q.StreamWith(db, &User{})
+	
+	channel := make(chan *User)
+	channel, errChan := q.ExecuteWith(db).StreamWithChannel(db, channel)
 	users := []*User{}
 	for {
 		select {
