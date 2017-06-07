@@ -1075,7 +1075,7 @@ func (o *QueryOutput) Results(next func() interface{}) (err error) {
 		if out, err = o.outputFunc(); err != nil {
 			o.Error = err
 			return
-		} else if out == nil {
+		} else if out == nil || len(out.Items) <= 0 {
 			return
 		}
 
@@ -1259,7 +1259,7 @@ func (o *ScanOutput) Results(next func() interface{}) (err error) {
 		if out, err = o.outputFunc(); err != nil {
 			o.Error = err
 			return
-		} else if out == nil {
+		} else if out == nil || len(out.Items) <= 0 {
 			return
 		}
 
