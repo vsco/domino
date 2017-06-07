@@ -171,7 +171,7 @@ Streaming Results
 		SetScanForward(true)
 
 	channel := make(chan *User)
-	errChan := q.ExecuteWith(ctx, db).StreamWith(channel)
+	errChan := q.ExecuteWith(ctx, db).StreamWithChannel(channel)
 	users := []*User{}
 	for {
 		select {
@@ -194,13 +194,14 @@ Streaming Results
 	p := table.passwordField.BeginsWith("password")
 	q := table.Scan().SetLimit(100).
 
-	channel, errChan := q.ExecuteWith(db, &User{})
+	channel := make(chan *User)
+	errChan := q.ExecuteWith(db).StreamWithChannel(channel)
 
 	for {
 		select {
 		case u, ok := <-channel:
 			if ok {
-				fmt.Println(u.(*User))
+				fmt.Println(u)
 			}
 		case err = <-errChan:
 
