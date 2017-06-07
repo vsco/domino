@@ -84,7 +84,8 @@ q := table.
 	SetConditionExpression(
 		table.PartitionKey.NotExists()
 	)
-err := dynamo.PutItem(q).ExecuteWith(dynamo).Result(nil)
+
+out := dynamo.PutItem(q).ExecuteWith(dynamo)
 ```
 
 GetItem
@@ -94,8 +95,9 @@ q := table.
 		KeyValue{"naveen@email.com", "password"},
 	).
 	SetConsistentRead(true)
-fetched := &User{}
-_, err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo).Result(fetched) //Pass in domain object template object
+
+user := &User{}
+err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo).Result(user) //Pass in domain object template object
 
 ```
 
@@ -155,7 +157,7 @@ q = table.
 
 ```
 
-Streaming Results
+Streaming Results - Allows for lazy data fetching and consuming
 
 ```go
 
@@ -169,15 +171,16 @@ Streaming Results
 		).
 		SetLimit(100).
 		SetScanForward(true)
-	
+
 	channel := make(chan *User)
-	channel, errChan := q.ExecuteWith(db).StreamWithChannel(db, channel)
+	errChan := q.ExecuteWith(ctx, db).StreamWithChannel(channel)
 	users := []*User{}
+  
 	for {
 		select {
 		case u, ok := <-channel:
 			if ok {
-				users = append(users, u.(*User))
+				users = append(users, u)
 			}
 		case err = <-errChan:
 
@@ -194,13 +197,14 @@ Streaming Results
 	p := table.passwordField.BeginsWith("password")
 	q := table.Scan().SetLimit(100).
 
-	channel, errChan := q.ExecuteWith(db, &User{})
+	channel := make(chan *User)
+	errChan := q.ExecuteWith(db).StreamWithChannel(channel)
 
 	for {
 		select {
 		case u, ok := <-channel:
 			if ok {
-				fmt.Println(u.(*User))
+				fmt.Println(u)
 			}
 		case err = <-errChan:
 
