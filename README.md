@@ -155,7 +155,7 @@ q = table.
 
 ```
 
-Streaming Results
+Streaming Results - Allows for lazy data fetching and consuming
 
 ```go
 
