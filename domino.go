@@ -391,6 +391,8 @@ func (o *getOutput) Result(item interface{}) (err error) {
 /***************************************************************************************/
 type batchGetInput struct {
 	input *[]*dynamodb.BatchGetItemInput
+
+	consistentRead bool
 	/*A set of mutational operations that might error out, i.e. not pure, and therefore not conducive to a fluent dsl*/
 	delayedFunctions []func() error
 }
@@ -462,9 +464,22 @@ func (d *batchGetInput) Build() (input []*dynamodb.BatchGetItemInput, err error)
 	input = *(d.input)
 	for _, i := range input {
 		i.ReturnConsumedCapacity = aws.String("INDEXES")
+
+		// set read consistency on individual items.
+		// this cannot be done in a delayedFunction because it depends on the context
+		// of the batchGetInput items.
+		for _, a := range i.RequestItems {
+			a.ConsistentRead = &d.consistentRead
+		}
 	}
 
 	return
+}
+
+/*SetConsistentRead ... */
+func (d *batchGetInput) SetConsistentRead(c bool) *batchGetInput {
+	d.consistentRead = c
+	return d
 }
 
 /**
