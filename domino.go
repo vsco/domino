@@ -1118,25 +1118,34 @@ func (o *QueryOutput) StreamWithChannel(channel interface{}) (errChan chan error
 	}
 	vc := reflect.ValueOf(channel)
 	errChan = make(chan error)
-
+	count := int64(0)
 	go func() {
 		defer close(errChan)
 		defer vc.Close()
-		results := []interface{}{}
-		err := o.Results(func() interface{} {
-			result := reflect.New(t).Interface()
-			results = append(results, result)
-			return result
-		})
-		if err != nil {
-			errChan <- err
-		}
-		for _, result := range results {
-			value := reflect.ValueOf(result)
-			if isPtr {
-				vc.Send(value)
-			} else {
-				vc.Send(reflect.Indirect(value))
+
+		for {
+			out, err := o.outputFunc()
+			if err != nil {
+				errChan <- err
+			} else if out == nil || len(out.Items) <= 0 {
+				return
+			}
+			for _, av := range out.Items {
+				if o.limit != nil && count >= *o.limit {
+					return
+				}
+				item := reflect.New(t).Interface()
+				count++
+				if err := deserializeTo(av, item); err != nil {
+					errChan <- err
+				} else {
+					value := reflect.ValueOf(item)
+					if isPtr {
+						vc.Send(value)
+					} else {
+						vc.Send(reflect.Indirect(value))
+					}
+				}
 			}
 		}
 	}()
@@ -1302,25 +1311,34 @@ func (o *ScanOutput) StreamWithChannel(channel interface{}) (errChan chan error)
 	}
 	vc := reflect.ValueOf(channel)
 	errChan = make(chan error)
-
+	count := int64(0)
 	go func() {
 		defer close(errChan)
 		defer vc.Close()
-		results := []interface{}{}
-		err := o.Results(func() interface{} {
-			result := reflect.New(t).Interface()
-			results = append(results, result)
-			return result
-		})
-		if err != nil {
-			errChan <- err
-		}
-		for _, result := range results {
-			value := reflect.ValueOf(result)
-			if isPtr {
-				vc.Send(value)
-			} else {
-				vc.Send(reflect.Indirect(value))
+
+		for {
+			out, err := o.outputFunc()
+			if err != nil {
+				errChan <- err
+			} else if out == nil || len(out.Items) <= 0 {
+				return
+			}
+			for _, av := range out.Items {
+				if o.limit != nil && count >= *o.limit {
+					return
+				}
+				item := reflect.New(t).Interface()
+				count++
+				if err := deserializeTo(av, item); err != nil {
+					errChan <- err
+				} else {
+					value := reflect.ValueOf(item)
+					if isPtr {
+						vc.Send(value)
+					} else {
+						vc.Send(reflect.Indirect(value))
+					}
+				}
 			}
 		}
 	}()
