@@ -630,7 +630,6 @@ func (d *batchWriteInput) writeItems(putOnly bool, items ...interface{}) *batchW
 		return d
 	}
 	delayed := func() error {
-		// batchCount := math.Ceil(float64(len(items)) / 25.0)
 		var batch *dynamodb.BatchWriteItemInput
 
 		for _, item := range items {
