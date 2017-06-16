@@ -527,8 +527,8 @@ func (o *batchGetOutput) Results(nextItem func() interface{}) (err error) {
 	}
 	for _, result := range o.results {
 		for _, items := range result.Responses {
-			for _, item := range items {
-				err = dynamodbattribute.UnmarshalMap(item, nextItem())
+			for _, av := range items {
+				err = deserializeTo(av, nextItem())
 				if err != nil {
 					return handleAwsErr(err)
 				}
@@ -733,7 +733,8 @@ func (d *batchPutOutput) Results(unprocessedItem func() interface{}) (err error)
 	for _, result := range d.results {
 		for _, items := range result.UnprocessedItems {
 			for _, item := range items {
-				if err = dynamodbattribute.UnmarshalMap(item.PutRequest.Item, unprocessedItem()); err != nil {
+
+				if err = deserializeTo(item.PutRequest.Item, unprocessedItem()); err != nil {
 					err = handleAwsErr(err)
 					return
 				}
