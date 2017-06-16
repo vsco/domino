@@ -4,6 +4,7 @@ import (
 	// "fmt"
 
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -159,13 +160,15 @@ func TestBatchPutItem(t *testing.T) {
 
 	assert.NoError(t, err)
 
+	items := []interface{}{}
+	for i := 0; i < 100; i++ {
+		row := User{Email: fmt.Sprintf("%dbob@email.com", i), Password: "password"}
+		items = append(items, row)
+	}
+
 	q := table.
 		BatchWriteItem().
-		PutItems(
-			User{Email: "bob@email.com", Password: "password"},
-			User{Email: "joe@email.com", Password: "password"},
-			User{Email: "alice@email.com", Password: "password"},
-		).
+		PutItems(items...).
 		DeleteItems(
 			KeyValue{"name@email.com", "password"},
 		)
@@ -180,12 +183,14 @@ func TestBatchPutItem(t *testing.T) {
 	assert.Empty(t, unprocessed)
 	assert.NoError(t, err)
 
+	keys := []KeyValue{}
+	for i := 0; i < 100; i++ {
+		key := KeyValue{fmt.Sprintf("%dbob@email.com", i), "password"}
+		keys = append(keys, key)
+	}
+
 	g := table.
-		BatchGetItem(
-			KeyValue{"bob@email.com", "password"},
-			KeyValue{"joe@email.com", "password"},
-			KeyValue{"alice@email.com", "password"},
-		)
+		BatchGetItem(keys...)
 
 	users := []*User{}
 	nextItem := func() interface{} {

@@ -555,13 +555,13 @@ func (table DynamoTable) PutItem(i interface{}) *putInput {
 	return &q
 }
 
-func (d *putInput) ReturnAllOld() *putInput  {
+func (d *putInput) ReturnAllOld() *putInput {
 	(*dynamodb.PutItemInput)(d).SetReturnValues("ALL_OLD")
 	return d
 }
 func (d *putInput) ReturnNone() *putInput {
 	(*dynamodb.PutItemInput)(d).SetReturnValues("NONE")
-		return d
+	return d
 }
 func (d *putInput) SetConditionExpression(c Expression) *putInput {
 	s, m, _ := c.construct(1, true)
@@ -606,7 +606,7 @@ func (o *putOutput) Result(item interface{}) (err error) {
 /************************************** BatchWriteItem *********************************/
 /***************************************************************************************/
 type batchWriteInput struct {
-	batches          []dynamodb.BatchWriteItemInput
+	batches          []*dynamodb.BatchWriteItemInput
 	table            DynamoTable
 	delayedFunctions []func() error
 }
@@ -619,52 +619,53 @@ type batchPutOutput struct {
 /*BatchWriteItem represents dynamo batch write item call*/
 func (table DynamoTable) BatchWriteItem() *batchWriteInput {
 	r := batchWriteInput{
-		batches: []dynamodb.BatchWriteItemInput{},
+		batches: []*dynamodb.BatchWriteItemInput{},
 		table:   table,
 	}
 	return &r
 }
 
 func (d *batchWriteInput) writeItems(putOnly bool, items ...interface{}) *batchWriteInput {
+	if len(items) <= 0 {
+		return d
+	}
 	delayed := func() error {
-		batches := []dynamodb.BatchWriteItemInput{}
-		batchCount := len(items)/25 + 1
-		for i := 1; i <= batchCount; i++ {
-			batch := dynamodb.BatchWriteItemInput{
-				RequestItems: make(map[string][]*dynamodb.WriteRequest),
-			}
-			puts := []*dynamodb.WriteRequest{}
+		var batch *dynamodb.BatchWriteItemInput
 
-			for len(items) > 0 && len(puts) < 25 {
-				item := items[0]
-				items = items[1:]
-				dynamoItem, err := dynamodbattribute.MarshalMap(item)
-				if err != nil {
-					return err
+		for _, item := range items {
+			if batch == nil {
+				batch = &dynamodb.BatchWriteItemInput{
+					RequestItems: make(map[string][]*dynamodb.WriteRequest),
 				}
-				var write *dynamodb.WriteRequest
-				if putOnly {
-					write = &dynamodb.WriteRequest{
-						PutRequest: &dynamodb.PutRequest{
-							Item: dynamoItem,
-						},
-					}
-				} else {
-					write = &dynamodb.WriteRequest{
-						DeleteRequest: &dynamodb.DeleteRequest{
-							Key: dynamoItem,
-						},
-					}
-				}
-
-				puts = append(puts, write)
+				d.batches = append(d.batches, batch)
 			}
 
-			batch.RequestItems[d.table.Name] = puts
-			batches = append(batches, batch)
+			dynamoItem, err := dynamodbattribute.MarshalMap(item)
 
+			if err != nil {
+				return err
+			}
+			var write *dynamodb.WriteRequest
+			if putOnly {
+				write = &dynamodb.WriteRequest{
+					PutRequest: &dynamodb.PutRequest{
+						Item: dynamoItem,
+					},
+				}
+			} else {
+				write = &dynamodb.WriteRequest{
+					DeleteRequest: &dynamodb.DeleteRequest{
+						Key: dynamoItem,
+					},
+				}
+			}
+			batch.RequestItems[d.table.Name] = append(batch.RequestItems[d.table.Name], write)
+
+			if len(batch.RequestItems[d.table.Name]) >= 25 {
+				batch = nil
+			}
 		}
-		d.batches = append(d.batches, batches...)
+
 		return nil
 	}
 	d.delayedFunctions = append(d.delayedFunctions, delayed)
@@ -687,7 +688,7 @@ func (d *batchWriteInput) DeleteItems(keys ...KeyValue) *batchWriteInput {
 	return d
 }
 
-func (d *batchWriteInput) Build() (input []dynamodb.BatchWriteItemInput, err error) {
+func (d *batchWriteInput) Build() (input []*dynamodb.BatchWriteItemInput, err error) {
 	for _, function := range d.delayedFunctions {
 		if err = function(); err != nil {
 			return
@@ -714,7 +715,7 @@ func (d *batchWriteInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace,
 		return
 	}
 	for _, batch := range batches {
-		result, err := dynamo.BatchWriteItemWithContext(ctx, &batch, opts...)
+		result, err := dynamo.BatchWriteItemWithContext(ctx, batch, opts...)
 		if err != nil {
 			out.Error = handleAwsErr(err)
 			return
