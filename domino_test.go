@@ -319,7 +319,6 @@ func TestPutItem(t *testing.T) {
 
 	err := table.CreateTable().ExecuteWith(ctx, db)
 	defer table.DeleteTable().ExecuteWith(ctx, db)
-
 	assert.NoError(t, err)
 
 	item := User{Email: "joe@email.com", Password: "password"}
@@ -331,6 +330,7 @@ func TestPutItem(t *testing.T) {
 	)
 
 	err = q.ExecuteWith(ctx, db).Result(nil)
+	assert.NoError(t, err)
 
 	v := table.
 		UpdateItem(
