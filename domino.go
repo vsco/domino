@@ -566,7 +566,10 @@ func (d *putInput) ReturnNone() *putInput {
 func (d *putInput) SetConditionExpression(c Expression) *putInput {
 	s, m, _ := c.construct(1, true)
 	d.ConditionExpression = &s
-	d.ExpressionAttributeValues, _ = dynamodbattribute.MarshalMap(m)
+	eav, _ := dynamodbattribute.MarshalMap(m)
+	if len(eav) > 0 {
+		d.ExpressionAttributeValues = eav
+	}
 
 	return d
 }
@@ -775,7 +778,10 @@ func (d *deleteItemInput) ReturnNone() *deleteItemInput {
 func (d *deleteItemInput) SetConditionExpression(c Expression) *deleteItemInput {
 	s, m, _ := c.construct(1, true)
 	d.ConditionExpression = &s
-	d.ExpressionAttributeValues, _ = dynamodbattribute.MarshalMap(m)
+	eav, _ := dynamodbattribute.MarshalMap(m)
+	if len(eav) > 0 {
+		d.ExpressionAttributeValues = eav
+	}
 	return d
 }
 
