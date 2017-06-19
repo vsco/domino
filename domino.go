@@ -326,8 +326,7 @@ func (r *dynamoResult) Error() error {
 	return r.err
 }
 
-func (r *dynamoResult) ConditionalCheckFailed() (b bool) {
-	fmt.Println(r.Error())
+func (r *dynamoResult) ConditionalCheckFailed() (b bool) {	
 	if err := r.Error(); err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
 			switch awsErr.Code() {
