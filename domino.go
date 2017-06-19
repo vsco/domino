@@ -318,13 +318,37 @@ type KeyValue struct {
 type TableName string
 type Keys *dynamodb.KeysAndAttributes
 
+type dynamoResult struct {
+	err error
+}
+
+func (r *dynamoResult) Error() error {
+	return r.err
+}
+
+func (r *dynamoResult) ConditionalCheckFailed() (b bool) {
+	fmt.Println(r.Error())
+	if err := r.Error(); err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			switch awsErr.Code() {
+			case dynamodb.ErrCodeConditionalCheckFailedException:
+				b = true
+			default:
+				b = false
+			}
+
+		}
+	}
+	return
+}
+
 /***************************************************************************************/
 /************************************** GetItem ****************************************/
 /***************************************************************************************/
 type getInput dynamodb.GetItemInput
 type getOutput struct {
+	*dynamoResult
 	*dynamodb.GetItemOutput
-	Error error
 }
 
 /*GetItem Primary constructor for creating a  get item query*/
@@ -366,21 +390,20 @@ func (d *getInput) Build() *dynamodb.GetItemInput {
 func (d *getInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *getOutput) {
 
 	o, err := dynamo.GetItemWithContext(ctx, d.Build(), opts...)
-	if err != nil {
-		err = handleAwsErr(err)
-		return
+	dr := &dynamoResult{
+		err,
 	}
 	out = &getOutput{
+		dr,
 		o,
-		nil,
 	}
 
 	return
 }
 
 func (o *getOutput) Result(item interface{}) (err error) {
-	err = o.Error
-	if o.GetItemOutput == nil || o.Error != nil || item == nil {
+	err = o.Error()
+	if o.GetItemOutput == nil || err != nil || item == nil {
 		return
 	}
 	return deserializeTo(o.Item, item)
@@ -397,8 +420,8 @@ type batchGetInput struct {
 	delayedFunctions []func() error
 }
 type batchGetOutput struct {
+	*dynamoResult
 	results []*dynamodb.BatchGetItemOutput
-	Error   error
 }
 
 /*BatchGetItem represents dynamo batch get item call*/
@@ -488,10 +511,13 @@ func (d *batchGetInput) SetConsistentRead(c bool) *batchGetInput {
  **
  */
 func (d *batchGetInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *batchGetOutput) {
-	out = &batchGetOutput{}
+	out = &batchGetOutput{
+		dynamoResult: &dynamoResult{},
+	}
+
 	var input []*dynamodb.BatchGetItemInput
 
-	if input, out.Error = d.Build(); out.Error != nil {
+	if input, out.err = d.Build(); out.err != nil {
 		return
 	}
 
@@ -499,8 +525,7 @@ func (d *batchGetInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, o
 		retry := 0
 	Execute:
 		var result *dynamodb.BatchGetItemOutput
-		if result, out.Error = dynamo.BatchGetItemWithContext(ctx, bg, opts...); out.Error != nil {
-			out.Error = handleAwsErr(out.Error)
+		if result, out.err = dynamo.BatchGetItemWithContext(ctx, bg, opts...); out.err != nil {
 			return
 		}
 		out.results = append(out.results, result)
@@ -521,16 +546,15 @@ func (d *batchGetInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, o
  **/
 
 func (o *batchGetOutput) Results(nextItem func() interface{}) (err error) {
-	err = o.Error
-	if o.Error != nil || nextItem == nil {
+	err = o.Error()
+	if o.Error() != nil || nextItem == nil {
 		return
 	}
 	for _, result := range o.results {
 		for _, items := range result.Responses {
 			for _, av := range items {
-				err = deserializeTo(av, nextItem())
-				if err != nil {
-					return handleAwsErr(err)
+				if o.err = deserializeTo(av, nextItem()); o.err != nil {
+					return
 				}
 			}
 		}
@@ -544,7 +568,7 @@ func (o *batchGetOutput) Results(nextItem func() interface{}) (err error) {
 type putInput dynamodb.PutItemInput
 type putOutput struct {
 	*dynamodb.PutItemOutput
-	Error error
+	*dynamoResult
 }
 
 /*PutItem represents dynamo put item call*/
@@ -586,9 +610,11 @@ func (d *putInput) Build() *dynamodb.PutItemInput {
  **
  */
 func (d *putInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *putOutput) {
-	out = &putOutput{}
+	out = &putOutput{
+		dynamoResult: &dynamoResult{},
+	}
 	if result, err := dynamo.PutItemWithContext(ctx, d.Build(), opts...); err != nil {
-		out.Error = handleAwsErr(err)
+		out.err = err
 	} else {
 		out.PutItemOutput = result
 	}
@@ -597,7 +623,7 @@ func (d *putInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts .
 }
 
 func (o *putOutput) Result(item interface{}) (err error) {
-	err = o.Error
+	err = o.Error()
 	if err != nil || o.PutItemOutput == nil || item == nil {
 		return
 	}
@@ -614,9 +640,8 @@ type batchWriteInput struct {
 	delayedFunctions []func() error
 }
 type batchPutOutput struct {
+	*dynamoResult
 	results []*dynamodb.BatchWriteItemOutput
-
-	Error error
 }
 
 /*BatchWriteItem represents dynamo batch write item call*/
@@ -710,17 +735,19 @@ func (d *batchWriteInput) Build() (input []*dynamodb.BatchWriteItemInput, err er
  **
  */
 func (d *batchWriteInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *batchPutOutput) {
-	out = &batchPutOutput{}
+	out = &batchPutOutput{
+		dynamoResult: &dynamoResult{},
+	}
 
 	batches, err := d.Build()
 	if err != nil {
-		out.Error = err
+		out.err = err
 		return
 	}
 	for _, batch := range batches {
 		result, err := dynamo.BatchWriteItemWithContext(ctx, batch, opts...)
 		if err != nil {
-			out.Error = handleAwsErr(err)
+			out.err = err
 			return
 		}
 		out.results = append(out.results, result)
@@ -730,16 +757,15 @@ func (d *batchWriteInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace,
 }
 
 func (d *batchPutOutput) Results(unprocessedItem func() interface{}) (err error) {
-	err = d.Error
+	err = d.Error()
 	if err != nil || d.results == nil || unprocessedItem == nil {
 		return
 	}
 	for _, result := range d.results {
 		for _, items := range result.UnprocessedItems {
 			for _, item := range items {
-
 				if err = deserializeTo(item.PutRequest.Item, unprocessedItem()); err != nil {
-					err = handleAwsErr(err)
+					d.err = err
 					return
 				}
 			}
@@ -753,8 +779,8 @@ func (d *batchPutOutput) Results(unprocessedItem func() interface{}) (err error)
 /***************************************************************************************/
 type deleteItemInput dynamodb.DeleteItemInput
 type deleteItemOutput struct {
+	*dynamoResult
 	*dynamodb.DeleteItemOutput
-	Error error
 }
 
 /*DeleteItemInput represents dynamo delete item call*/
@@ -797,10 +823,12 @@ func (d *deleteItemInput) Build() *dynamodb.DeleteItemInput {
  **
  */
 func (d *deleteItemInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *deleteItemOutput) {
-	out = &deleteItemOutput{}
+	out = &deleteItemOutput{
+		dynamoResult: &dynamoResult{},
+	}
 	result, err := dynamo.DeleteItemWithContext(ctx, d.Build(), opts...)
 	if err != nil {
-		out.Error = handleAwsErr(err)
+		out.err = err
 		return
 	}
 	out.DeleteItemOutput = result
@@ -808,11 +836,13 @@ func (d *deleteItemInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace,
 }
 
 func (o *deleteItemOutput) Result(item interface{}) (err error) {
-	err = o.Error
+	err = o.err
 	if err != nil || o.DeleteItemOutput == nil || item == nil {
 		return
 	}
-	deserializeTo(o.DeleteItemOutput.Attributes, item)
+	if err = deserializeTo(o.DeleteItemOutput.Attributes, item); err != nil {
+		o.err = err
+	}
 	return
 }
 
@@ -826,7 +856,7 @@ type UpdateInput struct {
 
 type UpdateOutput struct {
 	*dynamodb.UpdateItemOutput
-	Error error
+	*dynamoResult
 }
 
 /*UpdateInputItem represents dynamo batch get item call*/
@@ -918,9 +948,16 @@ func (d *UpdateInput) SetUpdateExpression(exprs ...*UpdateExpression) *UpdateInp
 	return d
 }
 
-func (d *UpdateInput) Build() *dynamodb.UpdateItemInput {
-	r := dynamodb.UpdateItemInput((*d).input)
-	return &r
+func (d *UpdateInput) Build() (r *dynamodb.UpdateItemInput, err error) {
+
+	for _, function := range d.delayedFunctions {
+		err = function()
+		if err != nil {
+			return nil, err
+		}
+	}
+	rr := dynamodb.UpdateItemInput((*d).input)
+	return &rr, err
 }
 
 /**
@@ -930,20 +967,26 @@ func (d *UpdateInput) Build() *dynamodb.UpdateItemInput {
  **
  */
 func (d *UpdateInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *UpdateOutput) {
-	out = &UpdateOutput{}
-	_, err := dynamo.UpdateItemWithContext(ctx, d.Build(), opts...)
+	out = &UpdateOutput{
+		dynamoResult: &dynamoResult{},
+	}
+	input, err := d.Build()
 	if err != nil {
-		out.Error = handleAwsErr(err)
+		out.err = err
 		return
 	}
+	_, out.err = dynamo.UpdateItemWithContext(ctx, input, opts...)
+
 	return
 }
 func (o *UpdateOutput) Result(item interface{}) (err error) {
-	err = o.Error
+	err = o.err
 	if err != nil || o.UpdateItemOutput == nil || item == nil {
 		return
 	}
-	deserializeTo(o.UpdateItemOutput.Attributes, item)
+	if err := deserializeTo(o.UpdateItemOutput.Attributes, item); err != nil {
+		o.err = err
+	}
 	return
 }
 
@@ -957,8 +1000,8 @@ type QueryInput struct {
 }
 
 type QueryOutput struct {
+	*dynamoResult
 	outputFunc func() (*dynamodb.QueryOutput, error)
-	Error      error
 	limit      *int64
 	ctx        context.Context
 }
@@ -1065,8 +1108,9 @@ func (d *QueryInput) Build() *dynamodb.QueryInput {
 func (d *QueryInput) ExecuteWith(ctx context.Context, db DynamoDBIFace, opts ...request.Option) (out *QueryOutput) {
 
 	out = &QueryOutput{
-		ctx:   ctx,
-		limit: d.Limit,
+		dynamoResult: &dynamoResult{},
+		ctx:          ctx,
+		limit:        d.Limit,
 	}
 
 	q := d.Build()
@@ -1077,7 +1121,7 @@ func (d *QueryInput) ExecuteWith(ctx context.Context, db DynamoDBIFace, opts ...
 		}
 		o, err = db.QueryWithContext(ctx, q, opts...)
 		if err != nil {
-			err = handleAwsErr(err)
+			out.err = err
 			return
 		}
 		for _, handler := range d.capacityHandlers {
@@ -1097,7 +1141,7 @@ func (d *QueryInput) ExecuteWith(ctx context.Context, db DynamoDBIFace, opts ...
 }
 
 func (o *QueryOutput) Results(next func() interface{}) (err error) {
-	err = o.Error
+	err = o.err
 	if err != nil || o.outputFunc == nil {
 		return
 	}
@@ -1105,7 +1149,7 @@ func (o *QueryOutput) Results(next func() interface{}) (err error) {
 	for {
 		var out *dynamodb.QueryOutput
 		if out, err = o.outputFunc(); err != nil {
-			o.Error = err
+			o.err = err
 			return
 		} else if out == nil || len(out.Items) <= 0 {
 			return
@@ -1117,8 +1161,8 @@ func (o *QueryOutput) Results(next func() interface{}) (err error) {
 			}
 			count++
 			item := next()
-			o.Error = deserializeTo(av, item)
-			if err = o.Error; err != nil {
+			if err = deserializeTo(av, item); err != nil {
+				o.err = err
 				return
 			}
 		}
@@ -1179,6 +1223,7 @@ type ScanInput struct {
 }
 
 type ScanOutput struct {
+	*dynamoResult
 	outputFunc func() (*dynamodb.ScanOutput, error)
 	Error      error
 	limit      *int64
@@ -1261,8 +1306,9 @@ func (d *ScanInput) Build() *dynamodb.ScanInput {
 func (d *ScanInput) ExecuteWith(ctx context.Context, db DynamoDBIFace, opts ...request.Option) (out *ScanOutput) {
 
 	out = &ScanOutput{
-		ctx:   ctx,
-		limit: d.Limit,
+		dynamoResult: &dynamoResult{},
+		ctx:          ctx,
+		limit:        d.Limit,
 	}
 
 	q := d.Build()
@@ -1273,7 +1319,7 @@ func (d *ScanInput) ExecuteWith(ctx context.Context, db DynamoDBIFace, opts ...r
 		}
 		o, err = db.ScanWithContext(ctx, q, opts...)
 		if err != nil {
-			err = handleAwsErr(err)
+			out.err = err
 			return
 		}
 
@@ -1298,7 +1344,7 @@ func (o *ScanOutput) Results(next func() interface{}) (err error) {
 	for {
 		var out *dynamodb.ScanOutput
 		if out, err = o.outputFunc(); err != nil {
-			o.Error = err
+			o.err = err
 			return
 		} else if out == nil || len(out.Items) <= 0 {
 			return
@@ -1310,8 +1356,8 @@ func (o *ScanOutput) Results(next func() interface{}) (err error) {
 			}
 			count++
 			item := next()
-			o.Error = deserializeTo(av, item)
-			if err = o.Error; err != nil {
+			o.err = deserializeTo(av, item)
+			if err = o.err; err != nil {
 				return
 			}
 		}
@@ -1567,7 +1613,7 @@ func (d *createTable) Build() *dynamodb.CreateTableInput {
 func (d *createTable) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) error {
 	defer time.Sleep(time.Duration(500) * time.Millisecond)
 	_, err := dynamo.CreateTableWithContext(ctx, d.Build(), opts...)
-	return handleAwsErr(err)
+	return err
 }
 
 /**********************************************************************************************/
@@ -1588,7 +1634,7 @@ func (d *deleteTable) Build() *dynamodb.DeleteTableInput {
 func (d *deleteTable) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) error {
 	defer time.Sleep(time.Duration(500) * time.Millisecond)
 	_, err := dynamo.DeleteTableWithContext(ctx, d.Build(), opts...)
-	return handleAwsErr(err)
+	return err
 }
 
 /*****************************************   Helpers  ******************************************/
@@ -1625,14 +1671,4 @@ func appendAttribute(m *map[string]*dynamodb.AttributeValue, key string, value i
 		(*m)[key] = v
 	}
 	return
-}
-
-func handleAwsErr(err error) error {
-	if err != nil {
-		if awsErr, ok := err.(awserr.Error); ok {
-			return fmt.Errorf("Error: %v, %v", awsErr.Code(), awsErr.Message())
-		}
-	}
-
-	return err
 }

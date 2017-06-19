@@ -147,7 +147,7 @@ func TestGetItemEmpty(t *testing.T) {
 	assert.NoError(t, err)
 
 	out := table.GetItem(KeyValue{"naveen@email.com", "password"}).ExecuteWith(ctx, db)
-	assert.Nil(t, out.Error)
+	assert.Nil(t, out.Error())
 	assert.Empty(t, out.Item)
 }
 
@@ -276,10 +276,18 @@ func TestUpdateItem(t *testing.T) {
 	err = u.ExecuteWith(ctx, db).Result(nil)
 	assert.Nil(t, err)
 	g := table.GetItem(KeyValue{"name@email.com", "password"})
-
 	out := g.ExecuteWith(ctx, db)
 
 	assert.NotEmpty(t, out.Item)
+
+	failed := table.
+		UpdateItem(KeyValue{"name@email.com", "password"}).
+		SetConditionExpression(table.loginCount.Equals(0)).
+		SetUpdateExpression(table.loginCount.Increment(1)).
+		ExecuteWith(ctx, db).
+		ConditionalCheckFailed()
+
+	assert.True(t, failed)
 
 }
 
