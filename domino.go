@@ -973,7 +973,7 @@ func (d *UpdateInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opt
 		out.err = err
 		return
 	}
-	_, out.err = dynamo.UpdateItemWithContext(ctx, input, opts...)
+	out.UpdateItemOutput, out.err = dynamo.UpdateItemWithContext(ctx, input, opts...)
 
 	return
 }
