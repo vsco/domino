@@ -834,7 +834,13 @@ func (d *deleteItemInput) SetConditionExpression(c Expression) *deleteItemInput 
 
 	d.ExpressionAttributeNames = n
 
-	d.ExpressionAttributeValues = marshal(m)
+	if d.ExpressionAttributeValues == nil {
+		d.ExpressionAttributeValues = marshal(m)
+	} else {
+		for k, v := range marshal(m) {
+			d.ExpressionAttributeValues[k] = v
+		}
+	}
 
 	return d
 }
@@ -926,7 +932,13 @@ func (d *UpdateInput) SetConditionExpression(c Expression) *UpdateInput {
 
 		d.input.ExpressionAttributeNames = n
 
-		d.input.ExpressionAttributeValues = marshal(m)
+		if d.input.ExpressionAttributeValues == nil {
+			d.input.ExpressionAttributeValues = marshal(m)
+		} else {
+			for k, v := range marshal(m) {
+				d.input.ExpressionAttributeValues[k] = v
+			}
+		}
 
 		return nil
 	}
@@ -967,7 +979,13 @@ func (d *UpdateInput) SetUpdateExpression(exprs ...*UpdateExpression) *UpdateInp
 
 	d.input.UpdateExpression = &s
 
-	d.input.ExpressionAttributeValues = marshal(m)
+	if d.input.ExpressionAttributeValues == nil {
+		d.input.ExpressionAttributeValues = marshal(m)
+	} else {
+		for k, v := range marshal(m) {
+			d.input.ExpressionAttributeValues[k] = v
+		}
+	}
 
 	return d
 }
@@ -1301,7 +1319,13 @@ func (d *ScanInput) SetFilterExpression(c Expression) *ScanInput {
 	d.FilterExpression = &s
 
 	d.ExpressionAttributeNames = n
-	d.ExpressionAttributeValues = marshal(m)
+	if d.ExpressionAttributeValues == nil {
+		d.ExpressionAttributeValues = marshal(m)
+	} else {
+		for k, v := range marshal(m) {
+			d.ExpressionAttributeValues[k] = v
+		}
+	}
 
 	return d
 }

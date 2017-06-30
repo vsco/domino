@@ -38,12 +38,12 @@ type UserTable struct {
 }
 
 type User struct {
-	Email       string            `json:"email"`
-	Password    string            `json:"password"`
-	Visits      []int64           `json:"visits"`
-	LoginCount  int               `json:"loginCount"`
-	RegDate     int64             `json:"registrationDate"`
-	Preferences map[string]string `json:"preferences"`
+	Email       string            `json:"email,omitempty"`
+	Password    string            `json:"password,omitempty"`
+	Visits      []int64           `dynamodbav:"visits,numberset,omitempty"`
+	LoginCount  int               `json:"loginCount,omitempty"`
+	RegDate     int64             `json:"registrationDate,omitempty"`
+	Preferences map[string]string `json:"preferences,omitempty"`
 }
 
 func NewUserTable() UserTable {
@@ -257,7 +257,7 @@ func TestUpdateItem(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	item := User{Email: "name@email.com", Password: "password", Visits: []int64{time.Now().UnixNano()}}
+	item := User{Email: "name@email.com", Password: "password", Preferences: map[string]string{"update_email": "test"}}
 	q := table.PutItem(item)
 	err = q.ExecuteWith(ctx, db).Result(nil)
 
@@ -269,24 +269,22 @@ func TestUpdateItem(t *testing.T) {
 			table.loginCount.Increment(1),
 			table.lastLoginDate.SetField(time.Now().UnixNano(), false),
 			table.registrationDate.SetField(time.Now().UnixNano(), true),
-			// table.visits.AddInteger(time.Now().UnixNano()),
+			table.visits.AddInteger(time.Now().UnixNano()),
 			table.preferences.Remove("update_email"),
 		)
 
-	fmt.Println(u.Build())
 	err = u.ExecuteWith(ctx, db).Result(nil)
 	assert.Nil(t, err)
-	g := table.GetItem(KeyValue{"name@email.com", "password"})
-	out := g.ExecuteWith(ctx, db)
-
+	out := table.GetItem(KeyValue{"name@email.com", "password"}).ExecuteWith(ctx, db)
 	assert.NotEmpty(t, out.Item)
 
-	failed := table.
+	u = table.
 		UpdateItem(KeyValue{"name@email.com", "password"}).
 		SetConditionExpression(table.loginCount.Equals(0)).
-		SetUpdateExpression(table.loginCount.Increment(1)).
-		ExecuteWith(ctx, db).
-		ConditionalCheckFailed()
+		SetUpdateExpression(table.loginCount.Increment(2))
+
+	failed := u.ExecuteWith(ctx, db).ConditionalCheckFailed()
+	out = table.GetItem(KeyValue{"name@email.com", "password"}).ExecuteWith(ctx, db)
 
 	assert.True(t, failed)
 

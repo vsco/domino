@@ -350,7 +350,7 @@ func (Field *dynamoMapField) Set(key string, a interface{}) *UpdateExpression {
 		ph := generatePlaceholder(key, c)
 		s := fmt.Sprintf("%v.%v = %v", Field.name, key, ph)
 		m := map[string]interface{}{
-			ph: []interface{}{a},
+			ph: a,
 		}
 		c++
 		return s, nil, m, c
@@ -361,14 +361,14 @@ func (Field *dynamoMapField) Set(key string, a interface{}) *UpdateExpression {
 /*RemoveKey removes an element from a map Field*/
 func (Field *dynamoMapField) Remove(key string) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
-		fn := generateNamePlaceholder(Field.name, c)
+		// fn := generateNamePlaceholder(Field.name, c)
+		// c++
+		// fv := generateNamePlaceholder(key, c)
+		s := fmt.Sprintf("%v.%v", Field.name, key)
 		c++
-		fv := generateNamePlaceholder(key, c)
-		s := fmt.Sprintf("%v.%v", fn, fv)
-		c++
-		n := map[string]*string{fn: &Field.name, fv: &key}
+		// n := map[string]*string{fn: &Field.name, fv: &key}
 
-		return s, n, nil, c
+		return s, nil, nil, c
 	}
 	return &UpdateExpression{op: "REMOVE", f: f}
 }
@@ -407,7 +407,7 @@ func (Field *dynamoSetField) AddString(a string) *UpdateExpression {
 	return Field.Add(attr)
 }
 
-func (Field *dynamoSetField) Delete(a interface{}) *UpdateExpression {
+func (Field *dynamoSetField) Delete(a *dynamodb.AttributeValue) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(a, c)
 		s := fmt.Sprintf(Field.name+" %v", ph)
@@ -416,6 +416,28 @@ func (Field *dynamoSetField) Delete(a interface{}) *UpdateExpression {
 		return s, nil, m, c
 	}
 	return &UpdateExpression{op: "DELETE", f: f}
+}
+
+func (Field *dynamoSetField) DeleteFloat(a float64) *UpdateExpression {
+	v := strconv.FormatFloat(a, 'E', -1, 64)
+	attr := &dynamodb.AttributeValue{
+		NS: []*string{&v},
+	}
+	return Field.Delete(attr)
+}
+func (Field *dynamoSetField) DeleteInteger(a int64) *UpdateExpression {
+	v := strconv.FormatInt(a, 10)
+	attr := &dynamodb.AttributeValue{
+		NS: []*string{&v},
+	}
+	return Field.Delete(attr)
+}
+
+func (Field *dynamoSetField) DeleteString(a string) *UpdateExpression {
+	attr := &dynamodb.AttributeValue{
+		SS: []*string{&a},
+	}
+	return Field.Delete(attr)
 }
 
 /*Increment a numeric counter Field*/
