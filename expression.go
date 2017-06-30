@@ -426,7 +426,7 @@ func (Field *dynamoSetField) Delete(a *dynamodb.AttributeValue) *UpdateExpressio
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(a, c)
 		s := fmt.Sprintf(Field.name+" %v", ph)
-		m := map[string]interface{}{ph: []interface{}{a}}
+		m := map[string]interface{}{ph: a}
 		c++
 		return s, nil, m, c
 	}

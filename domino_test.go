@@ -265,7 +265,7 @@ func TestUpdateItem(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	item := User{Email: "name@email.com", Password: "password", Preferences: map[string]string{"update_email": "test"}}
+	item := User{Email: "name@email.com", Password: "password", Degrees: []float64{1, 2}, Locales: []string{"eu"}, Preferences: map[string]string{"update_email": "test"}}
 	q := table.PutItem(item)
 	err = q.ExecuteWith(ctx, db).Result(nil)
 
@@ -279,11 +279,15 @@ func TestUpdateItem(t *testing.T) {
 			table.registrationDate.SetField(time.Now().UnixNano(), true),
 			table.visits.AddInteger(time.Now().UnixNano()),
 			table.preferences.Remove("update_email"),
-			table.preferences.Set("test", "test"),
+			table.preferences.Set("test", "value"),
 			table.locales.AddString("us"),
+			table.degrees.DeleteFloat(1),
 		)
 
 	err = u.ExecuteWith(ctx, db).Result(nil)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
 	assert.Nil(t, err)
 	out := table.GetItem(KeyValue{"name@email.com", "password"}).ExecuteWith(ctx, db)
 	assert.NotEmpty(t, out.Item)
@@ -293,8 +297,10 @@ func TestUpdateItem(t *testing.T) {
 	assert.NotNil(t, item.LoginDate)
 	assert.NotNil(t, item.RegDate)
 	assert.Equal(t, 1, len(item.Visits))
-	assert.Equal(t, 1, len(item.Preferences))
-	assert.Equal(t, 1, len(item.Locales))
+	assert.Equal(t, "value", item.Preferences["test"])
+	assert.Equal(t, []float64{2}, item.Degrees)
+	assert.Subset(t, []string{"eu", "us"}, item.Locales)
+	assert.Subset(t, item.Locales, []string{"eu", "us"})
 
 	u = table.
 		UpdateItem(KeyValue{"name@email.com", "password"}).

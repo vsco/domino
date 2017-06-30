@@ -15,7 +15,7 @@ new_go_repository(
 new_go_repository(
         name = "com_github_stretchr_testify",
         importpath="github.com/stretchr/testify",
-        commit="976c720a22c8eb4eb6a0b4348ad85ad12491a506"
+        commit="f6abca593680b2315d2075e0f5e2a9751e3f431a"
 )
 new_go_repository(
         name = "com_github_go_ini_ini",
@@ -30,7 +30,7 @@ new_go_repository(
 new_go_repository(
         name = "com_github_davecgh_go_spew",
         importpath="github.com/davecgh/go-spew",
-        commit="6d212800a42e8ab5c146b8ace3490ee17e5225f9"
+        commit="782f4967f2dc4564575ca782fe2d04090b5faca8"
 )
 new_go_repository(
         name = "com_github_jmespath_go_jmespath",
