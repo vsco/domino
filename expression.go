@@ -43,12 +43,12 @@ const (
 var nonalpha *regexp.Regexp = regexp.MustCompile("[^a-zA-Z_0-9]")
 
 func generatePlaceholder(a interface{}, counter uint) string {
-	r := fmt.Sprintf("%v_%v", a, counter)
+	r := fmt.Sprintf("%v_%d", a, counter)
 	return ":" + nonalpha.ReplaceAllString(r, "_")
 }
 
 func generateNamePlaceholder(a interface{}, counter uint) string {
-	r := fmt.Sprintf("%v_%v", a, counter)
+	r := fmt.Sprintf("%v_%d", a, counter)
 	return "#" + nonalpha.ReplaceAllString(r, "_")
 }
 
@@ -85,7 +85,7 @@ func (e ExpressionGroup) construct(counter uint, topLevel bool) (expr string, ex
 	}
 
 	if !topLevel && len(a) > 1 {
-		expr = fmt.Sprintf("(%v)", expr)
+		expr = fmt.Sprintf("(%s)", expr)
 	}
 	c = counter
 	return
@@ -121,7 +121,7 @@ func (n negation) construct(counter uint, topLevel bool) (string, map[string]*st
 	s, names, m, c := n.expression.construct(counter, topLevel)
 	r := "NOT " + s
 	if !topLevel {
-		r = fmt.Sprintf("(%v)", r)
+		r = fmt.Sprintf("(%s)", r)
 	}
 
 	return r, names, m, c
@@ -195,7 +195,7 @@ func (p *DynamoField) NotExists() Condition {
 func (p *dynamoCollectionField) Contains(a interface{}) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
-			return fmt.Sprintf("contains("+p.name+",%v)", placeholders[0])
+			return fmt.Sprintf("contains("+p.name+",%s)", placeholders[0])
 		},
 		args: []interface{}{a},
 	}
@@ -205,7 +205,7 @@ func (p *dynamoCollectionField) Contains(a interface{}) Condition {
 func (p *String) Contains(a string) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
-			return fmt.Sprintf("contains("+p.name+",%v)", placeholders[0])
+			return fmt.Sprintf("contains("+p.name+",%s)", placeholders[0])
 		},
 		args: []interface{}{a},
 	}
@@ -215,7 +215,7 @@ func (p *String) Contains(a string) Condition {
 func (p *dynamoCollectionField) Size(op string, a interface{}) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
-			return fmt.Sprintf("size("+p.name+") "+op+"%v", placeholders[0])
+			return fmt.Sprintf("size("+p.name+") "+op+"%s", placeholders[0])
 		},
 		args: []interface{}{a},
 	}
@@ -225,7 +225,7 @@ func (p *dynamoCollectionField) Size(op string, a interface{}) Condition {
 func (p *String) Size(op string, a interface{}) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
-			return fmt.Sprintf("size("+p.name+") "+op+"%v", placeholders[0])
+			return fmt.Sprintf("size("+p.name+") "+op+"%s", placeholders[0])
 		},
 		args: []interface{}{a},
 	}
@@ -239,7 +239,7 @@ func (p *DynamoField) operation(op string, a interface{}) KeyCondition {
 	return KeyCondition{
 		Condition{
 			exprF: func(placeholders []string) string {
-				return fmt.Sprintf("%s %s %v", p.name, op, placeholders[0])
+				return fmt.Sprintf("%s %s %s", p.name, op, placeholders[0])
 			},
 			args: []interface{}{a},
 		},
@@ -269,7 +269,7 @@ func (p *String) BeginsWith(a interface{}) KeyCondition {
 	return KeyCondition{
 		Condition{
 			exprF: func(placeholders []string) string {
-				return fmt.Sprintf("begins_with("+p.name+",%v)", placeholders[0])
+				return fmt.Sprintf("begins_with("+p.name+",%s)", placeholders[0])
 			},
 			args: []interface{}{a},
 		},
@@ -280,7 +280,7 @@ func (p *DynamoField) Between(a interface{}, b interface{}) KeyCondition {
 	return KeyCondition{
 		Condition{
 			exprF: func(placeholders []string) string {
-				return fmt.Sprintf("("+p.name+" between %v and %v)", placeholders[0], placeholders[1])
+				return fmt.Sprintf("("+p.name+" between %s and %s)", placeholders[0], placeholders[1])
 			},
 			args: []interface{}{a, b},
 		},
@@ -301,7 +301,7 @@ func (Field *DynamoField) SetField(a interface{}, onlyIfEmpty bool) *UpdateExpre
 		ph := generatePlaceholder(a, c)
 		r := ph
 		if onlyIfEmpty {
-			r = fmt.Sprintf("if_not_exists(%v,%v)", Field.name, ph)
+			r = fmt.Sprintf("if_not_exists(%s,%s)", Field.name, ph)
 		}
 		s := Field.name + " = " + r
 		m := map[string]interface{}{
@@ -338,7 +338,7 @@ func (Field *Numeric) Add(amount float64) *UpdateExpression {
 func (Field *dynamoListField) Append(a interface{}) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(a, c)
-		s := fmt.Sprintf(Field.name+" = list_append(%v,"+Field.name+")", ph)
+		s := fmt.Sprintf(Field.name+" = list_append(%s,"+Field.name+")", ph)
 		m := map[string]interface{}{ph: []interface{}{a}}
 		c++
 		return s, nil, m, c
@@ -349,7 +349,7 @@ func (Field *dynamoListField) Append(a interface{}) *UpdateExpression {
 func (Field *dynamoListField) Set(index int, a interface{}) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(a, c)
-		s := fmt.Sprintf(Field.name+"[%v] = %v", index, ph)
+		s := fmt.Sprintf(Field.name+"[%d] = %s", index, ph)
 		m := map[string]interface{}{ph: []interface{}{a}}
 		c++
 		return s, nil, m, c
@@ -359,7 +359,7 @@ func (Field *dynamoListField) Set(index int, a interface{}) *UpdateExpression {
 
 func (Field *dynamoListField) Remove(index int) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
-		s := fmt.Sprintf("%v[%v]", Field.name, index)
+		s := fmt.Sprintf("%s[%d]", Field.name, index)
 		return s, nil, nil, c
 	}
 	return &UpdateExpression{op: "REMOVE", f: f}
@@ -368,7 +368,7 @@ func (Field *dynamoListField) Remove(index int) *UpdateExpression {
 func (Field *dynamoMapField) Set(key string, a interface{}) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(key, c)
-		s := fmt.Sprintf("%v.%v = %v", Field.name, key, ph)
+		s := fmt.Sprintf("%s.%s = %s", Field.name, key, ph)
 		m := map[string]interface{}{
 			ph: a,
 		}
@@ -381,7 +381,7 @@ func (Field *dynamoMapField) Set(key string, a interface{}) *UpdateExpression {
 /*RemoveKey removes an element from a map Field*/
 func (Field *dynamoMapField) Remove(key string) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
-		s := fmt.Sprintf("%v.%v", Field.name, key)
+		s := fmt.Sprintf("%s.%s", Field.name, key)
 		c++
 		return s, nil, nil, c
 	}
@@ -391,7 +391,7 @@ func (Field *dynamoMapField) Remove(key string) *UpdateExpression {
 func (Field *dynamoSetField) Add(a *dynamodb.AttributeValue) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(c, c)
-		s := fmt.Sprintf(Field.name+" %v", ph)
+		s := fmt.Sprintf(Field.name+" %s", ph)
 		m := map[string]interface{}{ph: a}
 
 		c++
@@ -425,7 +425,7 @@ func (Field *dynamoSetField) AddString(a string) *UpdateExpression {
 func (Field *dynamoSetField) Delete(a *dynamodb.AttributeValue) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
 		ph := generatePlaceholder(a, c)
-		s := fmt.Sprintf(Field.name+" %v", ph)
+		s := fmt.Sprintf(Field.name+" %s", ph)
 		m := map[string]interface{}{ph: a}
 		c++
 		return s, nil, m, c

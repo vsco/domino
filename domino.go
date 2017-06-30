@@ -72,8 +72,10 @@ func marshal(m map[string]interface{}) (o map[string]*dynamodb.AttributeValue) {
 		case *dynamodb.AttributeValue:
 			o[k] = t
 		default:
-			a, _ := dynamodbattribute.Marshal(t)
-			o[k] = a
+			var err error
+			if o[k], err = dynamodbattribute.Marshal(t); err != nil {
+				panic(err)
+			}
 		}
 	}
 
