@@ -52,13 +52,31 @@ type ToValue interface {
 	ToDynamoDBValue() (bm interface{})
 }
 
-func serialize(item interface{}) (err error, av interface{}) {
+func serialize(item interface{}) (av map[string]*dynamodb.AttributeValue, err error) {
 	switch t := item.(type) {
 	case ToValue:
-		av = t.ToDynamoDBValue()
+		av, err = dynamodbattribute.MarshalMap(t.ToDynamoDBValue())
 	default:
 		av, err = dynamodbattribute.MarshalMap(item)
 	}
+	return
+}
+
+func marshal(m map[string]interface{}) (o map[string]*dynamodb.AttributeValue) {
+	if len(m) <= 0 {
+		return
+	}
+	o = map[string]*dynamodb.AttributeValue{}
+	for k, v := range m {
+		switch t := v.(type) {
+		case *dynamodb.AttributeValue:
+			o[k] = t
+		default:
+			a, _ := dynamodbattribute.Marshal(t)
+			o[k] = a
+		}
+	}
+
 	return
 }
 
@@ -110,6 +128,17 @@ type dynamoCollectionField struct {
 	DynamoField
 }
 
+type dynamoListField struct {
+	DynamoField
+}
+type dynamoSetField struct {
+	DynamoField
+}
+
+type dynamoMapField struct {
+	DynamoField
+}
+
 func (d DynamoField) Name() string {
 	return d.name
 }
@@ -132,7 +161,7 @@ type Numeric struct {
 
 /*NumericSet - A numeric set dynamo field*/
 type NumericSet struct {
-	dynamoCollectionField
+	dynamoSetField
 }
 
 /*String - A string dynamo field*/
@@ -142,7 +171,7 @@ type String struct {
 
 /*StringSet - A string set dynamo field*/
 type StringSet struct {
-	dynamoCollectionField
+	dynamoSetField
 }
 
 /*Binary - A binary dynamo field*/
@@ -152,7 +181,7 @@ type Binary struct {
 
 /*BinarySet - A binary dynamo field*/
 type BinarySet struct {
-	dynamoCollectionField
+	dynamoSetField
 }
 
 /*Bool - A boolean dynamo field*/
@@ -162,12 +191,12 @@ type Bool struct {
 
 /*List - A list dynamo field*/
 type List struct {
-	dynamoCollectionField
+	dynamoListField
 }
 
 /*Map - A map dynamo field*/
 type Map struct {
-	dynamoCollectionField
+	dynamoMapField
 }
 
 /*EmptyField ... A constructor for an empty dynamo field*/
@@ -195,7 +224,7 @@ func NumericField(name string) Numeric {
 /*NumericSetField ... A constructor for a numeric set dynamo field*/
 func NumericSetField(name string) NumericSet {
 	return NumericSet{
-		dynamoCollectionField{
+		dynamoSetField{
 			DynamoField{
 				name:  name,
 				_type: dNS,
@@ -243,7 +272,7 @@ func BinaryField(name string) Binary {
 /*BinarySetField ... A constructor for a binary set dynamo field*/
 func BinarySetField(name string) BinarySet {
 	return BinarySet{
-		dynamoCollectionField{
+		dynamoSetField{
 			DynamoField{
 				name:  name,
 				_type: dBS,
@@ -255,7 +284,7 @@ func BinarySetField(name string) BinarySet {
 /*StringSetField ... A constructor for a string set dynamo field*/
 func StringSetField(name string) StringSet {
 	return StringSet{
-		dynamoCollectionField{
+		dynamoSetField{
 			DynamoField{
 				name:  name,
 				_type: dSS,
@@ -267,7 +296,7 @@ func StringSetField(name string) StringSet {
 /*ListField ... A constructor for a list dynamo field*/
 func ListField(name string) List {
 	return List{
-		dynamoCollectionField{
+		dynamoListField{
 			DynamoField{
 				name:  name,
 				_type: dL,
@@ -279,7 +308,7 @@ func ListField(name string) List {
 /*MapField ... A constructor for a map dynamo field*/
 func MapField(name string) Map {
 	return Map{
-		dynamoCollectionField{
+		dynamoMapField{
 			DynamoField{
 				name:  name,
 				_type: dL,
@@ -325,7 +354,7 @@ func (r *dynamoResult) Error() error {
 	return r.err
 }
 
-func (r *dynamoResult) ConditionalCheckFailed() (b bool) {	
+func (r *dynamoResult) ConditionalCheckFailed() (b bool) {
 	if err := r.Error(); err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
 			switch awsErr.Code() {
@@ -586,12 +615,12 @@ func (d *putInput) ReturnNone() *putInput {
 	return d
 }
 func (d *putInput) SetConditionExpression(c Expression) *putInput {
-	s, m, _ := c.construct(1, true)
+	s, n, m, _ := c.construct(1, true)
 	d.ConditionExpression = &s
-	eav, _ := dynamodbattribute.MarshalMap(m)
-	if len(eav) > 0 {
-		d.ExpressionAttributeValues = eav
-	}
+
+	d.ExpressionAttributeNames = n
+
+	d.ExpressionAttributeValues = marshal(m)
 
 	return d
 }
@@ -800,12 +829,13 @@ func (d *deleteItemInput) ReturnNone() *deleteItemInput {
 }
 
 func (d *deleteItemInput) SetConditionExpression(c Expression) *deleteItemInput {
-	s, m, _ := c.construct(1, true)
+	s, n, m, _ := c.construct(1, true)
 	d.ConditionExpression = &s
-	eav, _ := dynamodbattribute.MarshalMap(m)
-	if len(eav) > 0 {
-		d.ExpressionAttributeValues = eav
-	}
+
+	d.ExpressionAttributeNames = n
+
+	d.ExpressionAttributeValues = marshal(m)
+
 	return d
 }
 
@@ -891,18 +921,13 @@ func (d *UpdateInput) ReturnNone() *UpdateInput {
 
 func (d *UpdateInput) SetConditionExpression(c Expression) *UpdateInput {
 	delayed := func() error {
-		s, m, _ := c.construct(1, true)
+		s, n, m, _ := c.construct(1, true)
 		d.input.ConditionExpression = &s
-		ea, err := dynamodbattribute.MarshalMap(m)
-		if err != nil {
-			return err
-		}
-		if d.input.ExpressionAttributeValues == nil {
-			d.input.ExpressionAttributeValues = make(DynamoDBValue)
-		}
-		for k, v := range ea {
-			d.input.ExpressionAttributeValues[k] = v
-		}
+
+		d.input.ExpressionAttributeNames = n
+
+		d.input.ExpressionAttributeValues = marshal(m)
+
 		return nil
 	}
 	d.delayedFunctions = append(d.delayedFunctions, delayed)
@@ -915,11 +940,19 @@ func (d *UpdateInput) SetUpdateExpression(exprs ...*UpdateExpression) *UpdateInp
 
 	c := uint(100)
 	for _, expr := range exprs {
-		s, mr, nc := expr.f(c)
+		s, mv, mr, nc := expr.f(c)
 		c = nc
 		for k, v := range mr {
 			m[k] = v
 		}
+		if d.input.ExpressionAttributeNames == nil && len(mv) > 0 {
+			d.input.ExpressionAttributeNames = mv
+		} else {
+			for k, v := range mv {
+				d.input.ExpressionAttributeNames[k] = v
+			}
+		}
+
 		if ms[expr.op] == "" {
 			ms[expr.op] = s
 		} else {
@@ -933,16 +966,9 @@ func (d *UpdateInput) SetUpdateExpression(exprs ...*UpdateExpression) *UpdateInp
 	}
 
 	d.input.UpdateExpression = &s
-	ea, err := dynamodbattribute.MarshalMap(m)
-	if err != nil {
-		panic(err)
-	}
-	if d.input.ExpressionAttributeValues == nil {
-		d.input.ExpressionAttributeValues = make(DynamoDBValue)
-	}
-	for k, v := range ea {
-		d.input.ExpressionAttributeValues[k] = v
-	}
+
+	d.input.ExpressionAttributeValues = marshal(m)
+
 	return d
 }
 
@@ -1017,12 +1043,11 @@ func (table DynamoTable) Query(partitionKeyCondition KeyCondition, rangeKeyCondi
 		e = partitionKeyCondition
 	}
 
-	s, m, _ := e.construct(0, true)
+	s, n, m, _ := e.construct(0, true)
 	q.TableName = &table.Name
 	q.KeyConditionExpression = &s
-	for k, v := range m {
-		appendAttribute(&q.ExpressionAttributeValues, k, v)
-	}
+	q.ExpressionAttributeNames = n
+	q.ExpressionAttributeValues = marshal(m)
 
 	return &q
 }
@@ -1065,12 +1090,18 @@ func (d *QueryInput) WithConsumedCapacityHandler(f func(*dynamodb.ConsumedCapaci
 }
 
 func (d *QueryInput) SetFilterExpression(c Expression) *QueryInput {
-	s, m, _ := c.construct(1, true)
+	s, n, m, _ := c.construct(1, true)
 	d.FilterExpression = &s
 
-	for k, v := range m {
-		appendAttribute(&d.ExpressionAttributeValues, k, v)
+	d.ExpressionAttributeNames = n
+	if d.ExpressionAttributeValues == nil {
+		d.ExpressionAttributeValues = marshal(m)
+	} else {
+		for k, v := range marshal(m) {
+			d.ExpressionAttributeValues[k] = v
+		}
 	}
+
 	return d
 }
 
@@ -1266,12 +1297,12 @@ func (d *ScanInput) SetPageSize(pageSize int) *ScanInput {
 }
 
 func (d *ScanInput) SetFilterExpression(c Expression) *ScanInput {
-	s, m, _ := c.construct(1, true)
+	s, n, m, _ := c.construct(1, true)
 	d.FilterExpression = &s
 
-	for k, v := range m {
-		appendAttribute(&d.ExpressionAttributeValues, k, v)
-	}
+	d.ExpressionAttributeNames = n
+	d.ExpressionAttributeValues = marshal(m)
+
 	return d
 }
 

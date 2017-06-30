@@ -269,10 +269,11 @@ func TestUpdateItem(t *testing.T) {
 			table.loginCount.Increment(1),
 			table.lastLoginDate.SetField(time.Now().UnixNano(), false),
 			table.registrationDate.SetField(time.Now().UnixNano(), true),
-			table.visits.Append(time.Now().UnixNano()),
-			table.preferences.RemoveKey("update_email"),
+			// table.visits.AddInteger(time.Now().UnixNano()),
+			table.preferences.Remove("update_email"),
 		)
 
+	fmt.Println(u.Build())
 	err = u.ExecuteWith(ctx, db).Result(nil)
 	assert.Nil(t, err)
 	g := table.GetItem(KeyValue{"name@email.com", "password"})
