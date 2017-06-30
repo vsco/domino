@@ -129,10 +129,10 @@ type dynamoCollectionField struct {
 }
 
 type dynamoListField struct {
-	DynamoField
+	dynamoCollectionField
 }
 type dynamoSetField struct {
-	DynamoField
+	dynamoCollectionField
 }
 
 type dynamoMapField struct {
@@ -225,9 +225,11 @@ func NumericField(name string) Numeric {
 func NumericSetField(name string) NumericSet {
 	return NumericSet{
 		dynamoSetField{
-			DynamoField{
-				name:  name,
-				_type: dNS,
+			dynamoCollectionField{
+				DynamoField{
+					name:  name,
+					_type: dNS,
+				},
 			},
 		},
 	}
@@ -273,9 +275,11 @@ func BinaryField(name string) Binary {
 func BinarySetField(name string) BinarySet {
 	return BinarySet{
 		dynamoSetField{
-			DynamoField{
-				name:  name,
-				_type: dBS,
+			dynamoCollectionField{
+				DynamoField{
+					name:  name,
+					_type: dBS,
+				},
 			},
 		},
 	}
@@ -285,9 +289,11 @@ func BinarySetField(name string) BinarySet {
 func StringSetField(name string) StringSet {
 	return StringSet{
 		dynamoSetField{
-			DynamoField{
-				name:  name,
-				_type: dSS,
+			dynamoCollectionField{
+				DynamoField{
+					name:  name,
+					_type: dSS,
+				},
 			},
 		},
 	}
@@ -297,9 +303,11 @@ func StringSetField(name string) StringSet {
 func ListField(name string) List {
 	return List{
 		dynamoListField{
-			DynamoField{
-				name:  name,
-				_type: dL,
+			dynamoCollectionField{
+				DynamoField{
+					name:  name,
+					_type: dL,
+				},
 			},
 		},
 	}

@@ -192,7 +192,17 @@ func (p *DynamoField) NotExists() Condition {
 }
 
 /*Contains represents the dynamo contains operator*/
-func (p *DynamoField) Contains(a interface{}) Condition {
+func (p *dynamoCollectionField) Contains(a interface{}) Condition {
+	return Condition{
+		exprF: func(placeholders []string) string {
+			return fmt.Sprintf("contains("+p.name+",%v)", placeholders[0])
+		},
+		args: []interface{}{a},
+	}
+}
+
+/*Contains represents the dynamo contains operator*/
+func (p *String) Contains(a string) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
 			return fmt.Sprintf("contains("+p.name+",%v)", placeholders[0])
@@ -202,7 +212,17 @@ func (p *DynamoField) Contains(a interface{}) Condition {
 }
 
 /*Contains represents the dynamo contains size*/
-func (p *DynamoField) Size(op string, a interface{}) Condition {
+func (p *dynamoCollectionField) Size(op string, a interface{}) Condition {
+	return Condition{
+		exprF: func(placeholders []string) string {
+			return fmt.Sprintf("size("+p.name+") "+op+"%v", placeholders[0])
+		},
+		args: []interface{}{a},
+	}
+}
+
+/*Contains represents the dynamo contains size*/
+func (p *String) Size(op string, a interface{}) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
 			return fmt.Sprintf("size("+p.name+") "+op+"%v", placeholders[0])
@@ -245,7 +265,7 @@ func (p *DynamoField) GreaterThanOrEq(a interface{}) KeyCondition {
 	return p.operation(gte, a)
 }
 
-func (p *DynamoField) BeginsWith(a interface{}) KeyCondition {
+func (p *String) BeginsWith(a interface{}) KeyCondition {
 	return KeyCondition{
 		Condition{
 			exprF: func(placeholders []string) string {
@@ -361,13 +381,8 @@ func (Field *dynamoMapField) Set(key string, a interface{}) *UpdateExpression {
 /*RemoveKey removes an element from a map Field*/
 func (Field *dynamoMapField) Remove(key string) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
-		// fn := generateNamePlaceholder(Field.name, c)
-		// c++
-		// fv := generateNamePlaceholder(key, c)
 		s := fmt.Sprintf("%v.%v", Field.name, key)
 		c++
-		// n := map[string]*string{fn: &Field.name, fv: &key}
-
 		return s, nil, nil, c
 	}
 	return &UpdateExpression{op: "REMOVE", f: f}
