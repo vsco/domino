@@ -140,7 +140,7 @@ func Not(c Expression) negation {
 /*********************************************************************************/
 /******************************** Conditions *************************************/
 /*********************************************************************************/
-/*Conditions that only apply to keys*/
+/*******Conditions that only apply to keys*********/
 
 func (c Condition) construct(counter uint, topLevel bool) (string, map[string]*string, map[string]interface{}, uint) {
 	a := make([]string, len(c.args))
@@ -162,7 +162,7 @@ func (c Condition) String() string {
 	return s
 }
 
-/*In represents the dynamo 'in' operator*/
+/*In constructs a list inclusion condition filter*/
 func (p *DynamoField) In(elems ...interface{}) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
@@ -173,7 +173,7 @@ func (p *DynamoField) In(elems ...interface{}) Condition {
 
 }
 
-/*Exists represents the dynamo attribute_exists operator*/
+/*Exists constructs a existential condition filter*/
 func (p *DynamoField) Exists() Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
@@ -182,7 +182,7 @@ func (p *DynamoField) Exists() Condition {
 	}
 }
 
-/*NotExists represents the dynamo attribute_not_exists operator*/
+/*NotExists constructs a existential exclusion condition filter*/
 func (p *DynamoField) NotExists() Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
@@ -191,7 +191,7 @@ func (p *DynamoField) NotExists() Condition {
 	}
 }
 
-/*Contains represents the dynamo contains operator*/
+/*Contains constructs a set inclusion condition filter*/
 func (p *dynamoCollectionField) Contains(a interface{}) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
@@ -201,7 +201,7 @@ func (p *dynamoCollectionField) Contains(a interface{}) Condition {
 	}
 }
 
-/*Contains represents the dynamo contains operator*/
+/*Contains constructs a string inclusion condition filter*/
 func (p *String) Contains(a string) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
@@ -211,8 +211,11 @@ func (p *String) Contains(a string) Condition {
 	}
 }
 
-/*Contains represents the dynamo contains size*/
-func (p *dynamoCollectionField) Size(op string, a interface{}) Condition {
+/*
+* Size constructs a collection length condition filter
+* table.someListField.Size("<", 25)  
+*/
+func (p *dynamoCollectionField) Size(op string, a int) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
 			return fmt.Sprintf("size("+p.name+") "+op+"%s", placeholders[0])
@@ -221,8 +224,11 @@ func (p *dynamoCollectionField) Size(op string, a interface{}) Condition {
 	}
 }
 
-/*Contains represents the dynamo contains size*/
-func (p *String) Size(op string, a interface{}) Condition {
+/*
+* Size constructs a string length condition filter
+* table.someStringField.Size(">=", 5)  
+*/
+func (p *String) Size(op string, a int) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
 			return fmt.Sprintf("size("+p.name+") "+op+"%s", placeholders[0])
