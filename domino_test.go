@@ -30,20 +30,25 @@ type UserTable struct {
 	lastLoginDate    Numeric
 	visits           NumericSet
 	preferences      Map
-	nameField        String
-	lastNameField    String
+	name             String
+	lastName         String
+	locales          StringSet
+	degrees          NumericSet
 
 	registrationDateIndex LocalSecondaryIndex
 	nameGlobalIndex       GlobalSecondaryIndex
 }
 
 type User struct {
-	Email       string            `json:"email"`
-	Password    string            `json:"password"`
-	Visits      []int64           `json:"visits"`
-	LoginCount  int               `json:"loginCount"`
-	RegDate     int64             `json:"registrationDate"`
-	Preferences map[string]string `json:"preferences"`
+	Email       string            `json:"email,omitempty"`
+	Password    string            `json:"password,omitempty"`
+	Visits      []int64           `dynamodbav:"visits,numberset,omitempty"`
+	Degrees     []float64         `dynamodbav:"degrees,numberset,omitempty"`
+	Locales     []string          `dynamodbav:"locales,stringset,omitempty"`
+	LoginCount  int               `json:"loginCount,omitempty"`
+	LoginDate   int64             `json:"lastLoginDate,omitempty"`
+	RegDate     int64             `json:"registrationDate,omitempty"`
+	Preferences map[string]string `json:"preferences,omitempty"`
 }
 
 func NewUserTable() UserTable {
@@ -52,6 +57,7 @@ func NewUserTable() UserTable {
 	firstName := StringField("firstName")
 	lastName := StringField("lastName")
 	reg := NumericField("registrationDate")
+
 	nameGlobalIndex := GlobalSecondaryIndex{
 		Name:             "name-index",
 		PartitionKey:     firstName,
@@ -87,6 +93,8 @@ func NewUserTable() UserTable {
 		MapField("preferences"),
 		firstName,
 		lastName,
+		StringSetField("locales"),
+		NumericSetField("degrees"),
 		registrationDateIndex,
 		nameGlobalIndex,
 	}
@@ -257,7 +265,7 @@ func TestUpdateItem(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	item := User{Email: "name@email.com", Password: "password", Visits: []int64{time.Now().UnixNano()}}
+	item := User{Email: "name@email.com", Password: "password", Degrees: []float64{1, 2}, Locales: []string{"eu"}, Preferences: map[string]string{"update_email": "test"}}
 	q := table.PutItem(item)
 	err = q.ExecuteWith(ctx, db).Result(nil)
 
@@ -269,23 +277,38 @@ func TestUpdateItem(t *testing.T) {
 			table.loginCount.Increment(1),
 			table.lastLoginDate.SetField(time.Now().UnixNano(), false),
 			table.registrationDate.SetField(time.Now().UnixNano(), true),
-			table.visits.Append(time.Now().UnixNano()),
-			table.preferences.RemoveKey("update_email"),
+			table.visits.AddInteger(time.Now().UnixNano()),
+			table.preferences.Remove("update_email"),
+			table.preferences.Set("test", "value"),
+			table.locales.AddString("us"),
+			table.degrees.DeleteFloat(1),
 		)
 
 	err = u.ExecuteWith(ctx, db).Result(nil)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
 	assert.Nil(t, err)
-	g := table.GetItem(KeyValue{"name@email.com", "password"})
-	out := g.ExecuteWith(ctx, db)
-
+	out := table.GetItem(KeyValue{"name@email.com", "password"}).ExecuteWith(ctx, db)
 	assert.NotEmpty(t, out.Item)
+	item = User{}
+	out.Result(&item)
+	assert.Equal(t, item.LoginCount, 1)
+	assert.NotNil(t, item.LoginDate)
+	assert.NotNil(t, item.RegDate)
+	assert.Equal(t, 1, len(item.Visits))
+	assert.Equal(t, "value", item.Preferences["test"])
+	assert.Equal(t, []float64{2}, item.Degrees)
+	assert.Subset(t, []string{"eu", "us"}, item.Locales)
+	assert.Subset(t, item.Locales, []string{"eu", "us"})
 
-	failed := table.
+	u = table.
 		UpdateItem(KeyValue{"name@email.com", "password"}).
 		SetConditionExpression(table.loginCount.Equals(0)).
-		SetUpdateExpression(table.loginCount.Increment(1)).
-		ExecuteWith(ctx, db).
-		ConditionalCheckFailed()
+		SetUpdateExpression(table.loginCount.Increment(2))
+
+	failed := u.ExecuteWith(ctx, db).ConditionalCheckFailed()
+	out = table.GetItem(KeyValue{"name@email.com", "password"}).ExecuteWith(ctx, db)
 
 	assert.True(t, failed)
 
@@ -375,12 +398,12 @@ func TestExpressions(t *testing.T) {
 	assert.NoError(t, err)
 
 	expr := Or(
-		table.registrationDate.BeginsWith("t"),
-		table.lastNameField.Contains("25"),
-		Not(table.registrationDate.Contains("t")),
+		table.registrationDate.Equals(123),
+		table.lastName.Contains("25"),
+		Not(table.registrationDate.Equals(345)),
 		And(
-			table.registrationDate.Size(lte, 25),
-			table.nameField.Size(gte, 25),
+			table.visits.Size(lte, 25),
+			table.name.Size(gte, 25),
 		),
 		table.registrationDate.Equals("test"),
 		table.registrationDate.LessThanOrEq("test"),
@@ -398,7 +421,7 @@ func TestExpressions(t *testing.T) {
 		SetScanForward(true).
 		SetFilterExpression(expr)
 
-	expectedFilter := "begins_with(registrationDate,:t_1) OR contains(lastName,:25_2) OR (NOT contains(registrationDate,:t_3)) OR (size(registrationDate) <=:25_4 AND size(firstName) >=:25_5) OR registrationDate = :test_6 OR registrationDate <= :test_7 OR (registrationDate between :0_8 and :1_9) OR (registrationDate in (:0_10,:1_11))"
+	expectedFilter := "registrationDate = :123_1 OR contains(lastName,:25_2) OR (NOT registrationDate = :345_3) OR (size(visits) <=:25_4 AND size(firstName) >=:25_5) OR registrationDate = :test_6 OR registrationDate <= :test_7 OR (registrationDate between :0_8 and :1_9) OR (registrationDate in (:0_10,:1_11))"
 	assert.Equal(t, expectedFilter, *q.Build().FilterExpression)
 
 	channel := make(chan *User)
