@@ -33,13 +33,14 @@ type UserTable struct {
 	preferences      domino.MapField
 	nameField        domino.String
 	lastNameField    domino.String
-	locales          StringSet
-	degrees          NumericSet
+	locales          domino.StringSet
+	degrees          domino.NumericSet
 
 	registrationDateIndex domino.LocalSecondaryIndex
 	nameGlobalIndex       domino.GlobalSecondaryIndex
 }
 
+// Define domain object
 type User struct {
 	Email       string            `json:"email"`
 	Password    string            `json:"password"`
@@ -51,6 +52,7 @@ type User struct {
 	Preferences map[string]string `json:"preferences"`
 }
 
+//Initialize the table
 func NewUserTable() MyTable {
 	pk := domino.StringField("email")
 	rk := domino.StringField("password")
