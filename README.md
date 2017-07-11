@@ -11,6 +11,11 @@ Features:
 
 
 ```go
+import(
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/aws/session"
+)
+
 
 sess := session.New(config)
 dynamo := dynamodb.New(sess)
@@ -28,20 +33,26 @@ type UserTable struct {
 	preferences      domino.MapField
 	nameField        domino.String
 	lastNameField    domino.String
+	locales          domino.List
+	degrees          domino.NumericSet
 
 	registrationDateIndex domino.LocalSecondaryIndex
 	nameGlobalIndex       domino.GlobalSecondaryIndex
 }
 
+// Define domain object
 type User struct {
-	Email       string            `json:"email"`
-	Password    string            `json:"password"`
-	Visits      []int64           `json:"visits"`
-	LoginCount  int               `json:"loginCount"`
-	RegDate     int64             `json:"registrationDate"`
-	Preferences map[string]string `json:"preferences"`
+	Email       string            `dynamodbav:"email"`
+	Password    string            `dynamodbav:"password"`
+	Visits      []int64           `dynamodbav:"visits,numberset,omitempty"`
+	Degrees     []float64         `dynamodbav:"degrees,numberset,omitempty"`
+	Locales     []string          `dynamodbav:"locales,omitempty"`
+	LoginCount  int               `dynamodbav:"loginCount"`
+	RegDate     int64             `dynamodbav:"registrationDate"`
+	Preferences map[string]string `dynamodbav:"preferences,omitempty"`
 }
 
+//Initialize the table
 func NewUserTable() MyTable {
 	pk := domino.StringField("email")
 	rk := domino.StringField("password")
@@ -59,10 +70,12 @@ func NewUserTable() MyTable {
 		reg, //registration
 		domino.NumericField("loginCount"),
 		domino.NumericField("lastLoginDate"),
-		domino.NumericFieldSet("visits"),
+		domino.NumericSetField("visits"),
 		domino.MapField("preferences"),
 		firstName,
 		lastName,
+		StringSetField("locales"),
+		NumericSetField("degrees"),
 		domino.LocalSecondaryIndex{"registrationDate-index", reg},
 		domino.GlobalSecondaryIndex{"name-index", firstName, lastName},
 	}
@@ -102,8 +115,6 @@ user := &User{}
 err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo).Result(user) //Pass in domain object template object
 
 ```
-
-
 Update Item
 ```go
 q := table.
@@ -117,7 +128,7 @@ q := table.
 		table.vists.RemoveElemIndex(0),
 		table.preferences.RemoveKey("update_email"),
 	)
-err = dynamo.UpdateItem(q).ExecuteWith(dynamo).Result(nil)
+err = dynamo.UpdateItem(q).ExecuteWith(dynamo).Error()
 ```
 
 Batch Get Item
@@ -129,8 +140,8 @@ q := table.
 	).
 	SetConsistentRead(true)
 
-	users := []*User{} //Set of unprocessed items (if any), returned by dynamo
-	q.ExecuteWith(db).Result(func() interface{} {
+	users := []*User{} //Set of return items
+	q.ExecuteWith(db).Results(func() interface{} {
 		user := User{}
 		users = append(users, &user)
 		return &user
@@ -152,10 +163,21 @@ expr := Or(
 q = table.
 	Query(
 		table.nameField.Equals("naveen"),
-		&p,
+		table.lastNameField.Equals("gattu"),
 	).
 	SetFilterExpression(expr)
+```
 
+Atomic Set and List operations
+```go
+table.
+	UpdateItem(
+		KeyValue{"naveen@email.com", "password"}
+	).
+	SetUpdateExpression(
+		table.visits.AddInteger(time.Now().UnixNano()),
+		table.locales.Append("us"),
+	)
 
 ```
 
