@@ -33,6 +33,8 @@ type UserTable struct {
 	preferences      domino.MapField
 	nameField        domino.String
 	lastNameField    domino.String
+	locales          StringSet
+	degrees          NumericSet
 
 	registrationDateIndex domino.LocalSecondaryIndex
 	nameGlobalIndex       domino.GlobalSecondaryIndex
@@ -41,7 +43,9 @@ type UserTable struct {
 type User struct {
 	Email       string            `json:"email"`
 	Password    string            `json:"password"`
-	Visits      []int64           `json:"visits"`
+	Visits      []int64           `dynamodbav:"visits,numberset,omitempty"`
+	Degrees     []float64         `dynamodbav:"degrees,numberset,omitempty"`
+	Locales     []string          `dynamodbav:"locales,stringset,omitempty"`
 	LoginCount  int               `json:"loginCount"`
 	RegDate     int64             `json:"registrationDate"`
 	Preferences map[string]string `json:"preferences"`
@@ -64,10 +68,12 @@ func NewUserTable() MyTable {
 		reg, //registration
 		domino.NumericField("loginCount"),
 		domino.NumericField("lastLoginDate"),
-		domino.NumericFieldSet("visits"),
+		domino.NumericSetField("visits"),
 		domino.MapField("preferences"),
 		firstName,
 		lastName,
+		StringSetField("locales"),
+		NumericSetField("degrees"),
 		domino.LocalSecondaryIndex{"registrationDate-index", reg},
 		domino.GlobalSecondaryIndex{"name-index", firstName, lastName},
 	}
@@ -158,6 +164,20 @@ q = table.
 		table.lastNameField.Equals("gattu"),
 	).
 	SetFilterExpression(expr)
+```
+
+Atomic Set and List operations
+```go
+table.
+	UpdateItem(
+		KeyValue{"naveen@email.com", "password"}
+	).
+	SetUpdateExpression(
+		table.visits.AddInteger(time.Now().UnixNano()),
+		
+	)
+
+
 ```
 
 Streaming Results - Allows for lazy data fetching and consuming
