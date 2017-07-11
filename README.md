@@ -85,7 +85,9 @@ q := table.
 		table.PartitionKey.NotExists()
 	)
 
-out := dynamo.PutItem(q).ExecuteWith(dynamo)
+result := dynamo.PutItem(q).ReturnAllOld().ExecuteWith(dynamo)
+user := &User{}
+err := result.Result(user) //Inflate the user object representing the old value.
 ```
 
 GetItem
