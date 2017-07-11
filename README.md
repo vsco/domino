@@ -102,8 +102,6 @@ user := &User{}
 err = dynamo.GetItem(q, &User{}).ExecuteWith(dynamo).Result(user) //Pass in domain object template object
 
 ```
-
-
 Update Item
 ```go
 q := table.
@@ -117,7 +115,7 @@ q := table.
 		table.vists.RemoveElemIndex(0),
 		table.preferences.RemoveKey("update_email"),
 	)
-err = dynamo.UpdateItem(q).ExecuteWith(dynamo).Result(nil)
+err = dynamo.UpdateItem(q).ExecuteWith(dynamo).Error()
 ```
 
 Batch Get Item
@@ -129,8 +127,8 @@ q := table.
 	).
 	SetConsistentRead(true)
 
-	users := []*User{} //Set of unprocessed items (if any), returned by dynamo
-	q.ExecuteWith(db).Result(func() interface{} {
+	users := []*User{} //Set of return items
+	q.ExecuteWith(db).Results(func() interface{} {
 		user := User{}
 		users = append(users, &user)
 		return &user
