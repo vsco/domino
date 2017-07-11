@@ -150,11 +150,9 @@ expr := Or(
 q = table.
 	Query(
 		table.nameField.Equals("naveen"),
-		&p,
+		table.lastNameField.Equals("gattu"),
 	).
 	SetFilterExpression(expr)
-
-
 ```
 
 Streaming Results - Allows for lazy data fetching and consuming
