@@ -11,6 +11,11 @@ Features:
 
 
 ```go
+import(
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/aws/session"
+)
+
 
 sess := session.New(config)
 dynamo := dynamodb.New(sess)
