@@ -33,7 +33,7 @@ type UserTable struct {
 	preferences      domino.MapField
 	nameField        domino.String
 	lastNameField    domino.String
-	locales          domino.StringSet
+	locales          domino.List
 	degrees          domino.NumericSet
 
 	registrationDateIndex domino.LocalSecondaryIndex
@@ -42,14 +42,14 @@ type UserTable struct {
 
 // Define domain object
 type User struct {
-	Email       string            `json:"email"`
-	Password    string            `json:"password"`
+	Email       string            `dynamodbav:"email"`
+	Password    string            `dynamodbav:"password"`
 	Visits      []int64           `dynamodbav:"visits,numberset,omitempty"`
 	Degrees     []float64         `dynamodbav:"degrees,numberset,omitempty"`
-	Locales     []string          `dynamodbav:"locales,stringset,omitempty"`
-	LoginCount  int               `json:"loginCount"`
-	RegDate     int64             `json:"registrationDate"`
-	Preferences map[string]string `json:"preferences"`
+	Locales     []string          `dynamodbav:"locales,omitempty"`
+	LoginCount  int               `dynamodbav:"loginCount"`
+	RegDate     int64             `dynamodbav:"registrationDate"`
+	Preferences map[string]string `dynamodbav:"preferences,omitempty"`
 }
 
 //Initialize the table
@@ -176,9 +176,8 @@ table.
 	).
 	SetUpdateExpression(
 		table.visits.AddInteger(time.Now().UnixNano()),
-		
+		table.locales.Append("us"),
 	)
-
 
 ```
 
