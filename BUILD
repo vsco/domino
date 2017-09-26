@@ -18,7 +18,7 @@ go_test(
 	name  ="domino_test",
 	srcs = ["domino_test.go"],
 	library = ":domino",
-	data = ["//:localstack"],
+	data = ["//:dynamodb"],
 	deps = [
 		"@com_github_aws_aws_sdk_go//aws:go_default_library",
 		"@com_github_aws_aws_sdk_go//aws/awserr:go_default_library",
@@ -30,12 +30,11 @@ go_test(
 		]
  )
 
-
 #### Atlassian / Localstack ####
 genrule(
-	name = "localstack",
+	name = "dynamodb",
 	outs = ["localstack-run-id"],
-	cmd = "docker rm -f localstack || true; docker run -d -p 4567-4576:4567-4576 --name localstack atlassianlabs/localstack:0.4.2 > $@",
+	cmd = "docker rm -f localstack || true; docker run -d -p 4567-4576:4567-4576 --name localstack atlassianlabs/localstack:0.4.1 > $@",
 	local = 1,
 	message = "Spinning up localstack container...",
 	visibility = ["//visibility:public"],
