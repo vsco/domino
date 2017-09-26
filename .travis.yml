@@ -3,9 +3,13 @@ sudo: true
 services:
   - docker
 
+language: java
+jdk:
+  - oraclejdk8
+
 env:
   global:
-    - BAZEL_VERSION=0.4.5
+    - BAZEL_VERSION=0.5.2
 
 branches:
   only:
