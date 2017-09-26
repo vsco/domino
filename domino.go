@@ -1258,10 +1258,22 @@ func (o *QueryOutput) StreamWithChannel(channel interface{}) (errChan chan error
 					errChan <- err
 				} else {
 					value := reflect.ValueOf(item)
-					if isPtr {
-						vc.Send(value)
-					} else {
-						vc.Send(reflect.Indirect(value))
+					if !isPtr {
+						value = reflect.Indirect(value)
+					}
+					c := reflect.SelectCase{
+						Dir:  reflect.SelectSend,
+						Chan: vc,
+						Send: value,
+					}
+					d := reflect.SelectCase{
+						Dir:  reflect.SelectRecv,
+						Chan: reflect.ValueOf(o.ctx.Done()),
+						Send: reflect.Value{},
+					}
+					if idx, _, _ := reflect.Select([]reflect.SelectCase{c, d}); idx == 1 {
+						// ctx done
+						return
 					}
 				}
 			}
@@ -1459,10 +1471,22 @@ func (o *ScanOutput) StreamWithChannel(channel interface{}) (errChan chan error)
 					errChan <- err
 				} else {
 					value := reflect.ValueOf(item)
-					if isPtr {
-						vc.Send(value)
-					} else {
-						vc.Send(reflect.Indirect(value))
+					if !isPtr {
+						value = reflect.Indirect(value)
+					}
+					c := reflect.SelectCase{
+						Dir:  reflect.SelectSend,
+						Chan: vc,
+						Send: value,
+					}
+					d := reflect.SelectCase{
+						Dir:  reflect.SelectRecv,
+						Chan: reflect.ValueOf(o.ctx.Done()),
+						Send: reflect.Value{},
+					}
+					if idx, _, _ := reflect.Select([]reflect.SelectCase{c, d}); idx == 1 {
+						// ctx done
+						return
 					}
 				}
 			}
