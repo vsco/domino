@@ -7,10 +7,6 @@ env:
   global:
     - BAZEL_VERSION=0.5.4
 
-branches:
-  only:
-    - master
-
 before_install:
   - mkdir -p ${HOME}/bazel/install
   - pushd ${HOME}/bazel/install
@@ -27,7 +23,6 @@ script:
   - bazel test --test_output=errors  //...
 
 cache:
-  timeout: 300
   directories:
     - $HOME/.vsco/bazel
 
