@@ -27,7 +27,6 @@ script:
   - bazel test --test_output=errors  //...
 
 cache:
-  timeout: 300
   directories:
     - $HOME/.vsco/bazel
 
