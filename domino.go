@@ -1584,7 +1584,7 @@ func (d *createTable) WithLocalSecondaryIndex(lsi LocalSecondaryIndex) *createTa
 		AttributeName: aws.String(lsi.PartitionKey.Name()),
 		AttributeType: aws.String(lsi.PartitionKey.Type()),
 	}
-	
+
 	rk := &dynamodb.AttributeDefinition{
 		AttributeName: aws.String(lsi.SortKey.Name()),
 		AttributeType: aws.String(lsi.SortKey.Type()),
@@ -1652,34 +1652,36 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 		gsiw = aws.Int64(10)
 	}
 
+	keySchema := []*dynamodb.KeySchemaElement{
+		{
+			AttributeName: aws.String(gsi.PartitionKey.Name()),
+			KeyType:       aws.String("HASH"),
+		},
+	}
+
 	// populate missing AttributeDefinitions
 	pk := &dynamodb.AttributeDefinition{
 		AttributeName: aws.String(gsi.PartitionKey.Name()),
 		AttributeType: aws.String(gsi.PartitionKey.Type()),
 	}
 	d.AttributeDefinitions = append(d.AttributeDefinitions, pk)
-	
+
 	if !gsi.RangeKey.IsEmpty() {
 		rk := &dynamodb.AttributeDefinition{
 			AttributeName: aws.String(gsi.RangeKey.Name()),
 			AttributeType: aws.String(gsi.RangeKey.Type()),
 		}
 		d.AttributeDefinitions = append(d.AttributeDefinitions, rk)
+		keySchema = append(keySchema, &dynamodb.KeySchemaElement{
+			AttributeName: aws.String(gsi.RangeKey.Name()),
+			KeyType:       aws.String("RANGE"),
+		})
 	}
 
 	// create gsi obj
 	dynamoGsi := dynamodb.GlobalSecondaryIndex{
 		IndexName: &gsi.Name,
-		KeySchema: []*dynamodb.KeySchemaElement{
-			{
-				AttributeName: aws.String(gsi.PartitionKey.Name()),
-				KeyType:       aws.String("HASH"),
-			},
-			{
-				AttributeName: aws.String(gsi.RangeKey.Name()),
-				KeyType:       aws.String("RANGE"),
-			},
-		},
+		KeySchema: keySchema,
 		Projection: &dynamodb.Projection{
 			ProjectionType:   pt,
 			NonKeyAttributes: nka,
