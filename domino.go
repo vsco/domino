@@ -1584,6 +1584,7 @@ func (d *createTable) WithLocalSecondaryIndex(lsi LocalSecondaryIndex) *createTa
 		AttributeName: aws.String(lsi.PartitionKey.Name()),
 		AttributeType: aws.String(lsi.PartitionKey.Type()),
 	}
+	
 	rk := &dynamodb.AttributeDefinition{
 		AttributeName: aws.String(lsi.SortKey.Name()),
 		AttributeType: aws.String(lsi.SortKey.Type()),
