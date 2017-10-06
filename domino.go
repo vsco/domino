@@ -1584,6 +1584,7 @@ func (d *createTable) WithLocalSecondaryIndex(lsi LocalSecondaryIndex) *createTa
 		AttributeName: aws.String(lsi.PartitionKey.Name()),
 		AttributeType: aws.String(lsi.PartitionKey.Type()),
 	}
+	
 	rk := &dynamodb.AttributeDefinition{
 		AttributeName: aws.String(lsi.SortKey.Name()),
 		AttributeType: aws.String(lsi.SortKey.Type()),
@@ -1656,12 +1657,15 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 		AttributeName: aws.String(gsi.PartitionKey.Name()),
 		AttributeType: aws.String(gsi.PartitionKey.Type()),
 	}
-	rk := &dynamodb.AttributeDefinition{
-		AttributeName: aws.String(gsi.RangeKey.Name()),
-		AttributeType: aws.String(gsi.RangeKey.Type()),
-	}
 	d.AttributeDefinitions = append(d.AttributeDefinitions, pk)
-	d.AttributeDefinitions = append(d.AttributeDefinitions, rk)
+	
+	if !gsi.RangeKey.IsEmpty() {
+		rk := &dynamodb.AttributeDefinition{
+			AttributeName: aws.String(gsi.RangeKey.Name()),
+			AttributeType: aws.String(gsi.RangeKey.Type()),
+		}
+		d.AttributeDefinitions = append(d.AttributeDefinitions, rk)
+	}
 
 	// create gsi obj
 	dynamoGsi := dynamodb.GlobalSecondaryIndex{
