@@ -1352,7 +1352,6 @@ func (d *ScanInput) SetFilterExpression(c Expression) *ScanInput {
 	return d
 }
 
-
 func (d *ScanInput) SetLocalIndex(idx LocalSecondaryIndex) *ScanInput {
 	d.IndexName = &idx.Name
 	return d
@@ -1360,11 +1359,6 @@ func (d *ScanInput) SetLocalIndex(idx LocalSecondaryIndex) *ScanInput {
 
 func (d *ScanInput) SetGlobalIndex(idx GlobalSecondaryIndex) *ScanInput {
 	d.IndexName = &idx.Name
-	return d
-}
-
-func (d *ScanInput) SetScanForward(forward bool) *ScanInput {
-	d.ScanIndexForward = &forward
 	return d
 }
 
