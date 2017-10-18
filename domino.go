@@ -1235,7 +1235,7 @@ func (o *QueryOutput) StreamWithChannel(channel interface{}) (errChan chan error
 		t = t.Elem()
 	}
 	vc := reflect.ValueOf(channel)
-	errChan = make(chan error)
+	errChan = make(chan error, 1)
 	count := int64(0)
 	go func() {
 		defer close(errChan)
@@ -1245,6 +1245,7 @@ func (o *QueryOutput) StreamWithChannel(channel interface{}) (errChan chan error
 			out, err := o.outputFunc()
 			if err != nil {
 				errChan <- err
+				return
 			} else if out == nil || len(out.Items) <= 0 {
 				return
 			}
@@ -1256,6 +1257,7 @@ func (o *QueryOutput) StreamWithChannel(channel interface{}) (errChan chan error
 				count++
 				if err := deserializeTo(av, item); err != nil {
 					errChan <- err
+					return
 				} else {
 					value := reflect.ValueOf(item)
 					if !isPtr {
@@ -1448,7 +1450,7 @@ func (o *ScanOutput) StreamWithChannel(channel interface{}) (errChan chan error)
 		t = t.Elem()
 	}
 	vc := reflect.ValueOf(channel)
-	errChan = make(chan error)
+	errChan = make(chan error, 1)
 	count := int64(0)
 	go func() {
 		defer close(errChan)
@@ -1458,6 +1460,7 @@ func (o *ScanOutput) StreamWithChannel(channel interface{}) (errChan chan error)
 			out, err := o.outputFunc()
 			if err != nil {
 				errChan <- err
+				return
 			} else if out == nil || len(out.Items) <= 0 {
 				return
 			}
@@ -1469,6 +1472,7 @@ func (o *ScanOutput) StreamWithChannel(channel interface{}) (errChan chan error)
 				count++
 				if err := deserializeTo(av, item); err != nil {
 					errChan <- err
+					return
 				} else {
 					value := reflect.ValueOf(item)
 					if !isPtr {
