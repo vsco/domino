@@ -89,9 +89,9 @@ const (
 	dNS   = "NS"
 	dB    = "B"
 	dBS   = "BS"
-	dBOOL = "Bool"
-	dNULL = "Null"
-	dL    = "List"
+	dBOOL = "BOOL"
+	dNULL = "NULL"
+	dL    = "L"
 	dM    = "M"
 )
 
