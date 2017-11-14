@@ -625,7 +625,7 @@ func (d *putInput) ReturnNone() *putInput {
 	return d
 }
 func (d *putInput) SetConditionExpression(c Expression) *putInput {
-	s, n, m, _ := c.construct(1, true)
+	s, n, m, _ := c.construct("cond", 1, true)
 	d.ConditionExpression = &s
 
 	d.ExpressionAttributeNames = n
@@ -839,7 +839,7 @@ func (d *deleteItemInput) ReturnNone() *deleteItemInput {
 }
 
 func (d *deleteItemInput) SetConditionExpression(c Expression) *deleteItemInput {
-	s, n, m, _ := c.construct(1, true)
+	s, n, m, _ := c.construct("cond", 1, true)
 	d.ConditionExpression = &s
 
 	d.ExpressionAttributeNames = n
@@ -937,7 +937,7 @@ func (d *UpdateInput) ReturnNone() *UpdateInput {
 
 func (d *UpdateInput) SetConditionExpression(c Expression) *UpdateInput {
 	delayed := func() error {
-		s, n, m, _ := c.construct(1, true)
+		s, n, m, _ := c.construct("cond", 1, true)
 		d.input.ConditionExpression = &s
 
 		d.input.ExpressionAttributeNames = n
@@ -1071,7 +1071,7 @@ func (table DynamoTable) Query(partitionKeyCondition KeyCondition, rangeKeyCondi
 		e = partitionKeyCondition
 	}
 
-	s, n, m, _ := e.construct(0, true)
+	s, n, m, _ := e.construct("cond", 0, true)
 	q.TableName = &table.Name
 	q.KeyConditionExpression = &s
 	q.ExpressionAttributeNames = n
@@ -1118,7 +1118,7 @@ func (d *QueryInput) WithConsumedCapacityHandler(f func(*dynamodb.ConsumedCapaci
 }
 
 func (d *QueryInput) SetFilterExpression(c Expression) *QueryInput {
-	s, n, m, _ := c.construct(1, true)
+	s, n, m, _ := c.construct("filter", 1, true)
 	d.FilterExpression = &s
 
 	d.ExpressionAttributeNames = n
@@ -1339,7 +1339,7 @@ func (d *ScanInput) SetPageSize(pageSize int) *ScanInput {
 }
 
 func (d *ScanInput) SetFilterExpression(c Expression) *ScanInput {
-	s, n, m, _ := c.construct(1, true)
+	s, n, m, _ := c.construct("filter", 1, true)
 	d.FilterExpression = &s
 
 	d.ExpressionAttributeNames = n

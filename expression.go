@@ -11,7 +11,7 @@ import (
 
 /*Expression represents a dynamo Condition expression, i.e. And(if_empty(...), size(path) >0) */
 type Expression interface {
-	construct(counter uint, b bool) (string, map[string]*string, map[string]interface{}, uint)
+	construct(prefix string, counter uint, b bool) (string, map[string]*string, map[string]interface{}, uint)
 }
 type ExpressionGroup struct {
 	expressions []Expression
@@ -42,13 +42,13 @@ const (
 
 var nonalpha *regexp.Regexp = regexp.MustCompile("[^a-zA-Z_0-9]")
 
-func generatePlaceholder(a interface{}, counter uint) string {
-	r := fmt.Sprintf("%v_%d", a, counter)
+func generatePlaceholder(a string, counter uint) string {
+	r := fmt.Sprintf("%s_%d", a, counter)
 	return ":" + nonalpha.ReplaceAllString(r, "_")
 }
 
-func generateNamePlaceholder(a interface{}, counter uint) string {
-	r := fmt.Sprintf("%v_%d", a, counter)
+func generateNamePlaceholder(a string, counter uint) string {
+	r := fmt.Sprintf("%s_%d", a, counter)
 	return "#" + nonalpha.ReplaceAllString(r, "_")
 }
 
@@ -57,14 +57,14 @@ func generateNamePlaceholder(a interface{}, counter uint) string {
 /*********************************************************************************/
 /*Groups expression by AND and OR operators, i.e. <expr> OR <expr>*/
 
-func (e ExpressionGroup) construct(counter uint, topLevel bool) (expr string, exprNames map[string]*string, exprValues map[string]interface{}, c uint) {
+func (e ExpressionGroup) construct(prefix string, counter uint, topLevel bool) (expr string, exprNames map[string]*string, exprValues map[string]interface{}, c uint) {
 	a := e.expressions
 
 	for i := 0; i < len(a); i++ {
 		if i > 0 {
 			expr += " " + e.op + " "
 		}
-		substring, names, placeholders, newCounter := a[i].construct(counter, false)
+		substring, names, placeholders, newCounter := a[i].construct(prefix, counter, false)
 		expr += substring
 		if exprValues == nil && len(placeholders) > 0 {
 			exprValues = placeholders
@@ -109,7 +109,7 @@ func And(c ...Expression) ExpressionGroup {
 
 /*String stringifies expressions for easy debugging*/
 func (c ExpressionGroup) String() string {
-	s, _, _, _ := c.construct(0, true)
+	s, _, _, _ := c.construct("expr", 0, true)
 	return s
 }
 
@@ -117,8 +117,8 @@ func (c ExpressionGroup) String() string {
 /******************************** Negation Expression ****************************/
 /*********************************************************************************/
 
-func (n negation) construct(counter uint, topLevel bool) (string, map[string]*string, map[string]interface{}, uint) {
-	s, names, m, c := n.expression.construct(counter, topLevel)
+func (n negation) construct(prefix string, counter uint, topLevel bool) (string, map[string]*string, map[string]interface{}, uint) {
+	s, names, m, c := n.expression.construct(prefix, counter, topLevel)
 	r := "NOT " + s
 	if !topLevel {
 		r = fmt.Sprintf("(%s)", r)
@@ -128,7 +128,7 @@ func (n negation) construct(counter uint, topLevel bool) (string, map[string]*st
 }
 
 func (c negation) String() string {
-	s, _, _, _ := c.construct(0, true)
+	s, _, _, _ := c.construct("neg", 0, true)
 	return s
 }
 
@@ -142,11 +142,11 @@ func Not(c Expression) negation {
 /*********************************************************************************/
 /*******Conditions that only apply to keys*********/
 
-func (c Condition) construct(counter uint, topLevel bool) (string, map[string]*string, map[string]interface{}, uint) {
+func (c Condition) construct(prefix string, counter uint, topLevel bool) (string, map[string]*string, map[string]interface{}, uint) {
 	a := make([]string, len(c.args))
 	var m map[string]interface{}
 	for i, b := range c.args {
-		a[i] = generatePlaceholder(b, counter)
+		a[i] = generatePlaceholder(prefix, counter)
 		if m == nil {
 			m = map[string]interface{}{}
 		}
@@ -158,7 +158,7 @@ func (c Condition) construct(counter uint, topLevel bool) (string, map[string]*s
 }
 
 func (c Condition) String() string {
-	s, _, _, _ := c.construct(0, true)
+	s, _, _, _ := c.construct("cond", 0, true)
 	return s
 }
 
@@ -213,8 +213,8 @@ func (p *String) Contains(a string) Condition {
 
 /*
 * Size constructs a collection length condition filter
-* table.someListField.Size("<", 25)  
-*/
+* table.someListField.Size("<", 25)
+ */
 func (p *dynamoCollectionField) Size(op string, a int) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
@@ -226,8 +226,8 @@ func (p *dynamoCollectionField) Size(op string, a int) Condition {
 
 /*
 * Size constructs a string length condition filter
-* table.someStringField.Size(">=", 5)  
-*/
+* table.someStringField.Size(">=", 5)
+ */
 func (p *String) Size(op string, a int) Condition {
 	return Condition{
 		exprF: func(placeholders []string) string {
@@ -304,7 +304,7 @@ type UpdateExpression struct {
 /*SetField sets a dynamo Field. Set onlyIfEmpty to true if you want to prevent overwrites*/
 func (Field *DynamoField) SetField(a interface{}, onlyIfEmpty bool) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
-		ph := generatePlaceholder(a, c)
+		ph := generatePlaceholder("update", c)
 		r := ph
 		if onlyIfEmpty {
 			r = fmt.Sprintf("if_not_exists(%s,%s)", Field.name, ph)
@@ -331,7 +331,7 @@ func (Field *DynamoField) RemoveField() *UpdateExpression {
 /*Add adds an amount to dynamo numeric Field*/
 func (Field *Numeric) Add(amount float64) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
-		ph := generatePlaceholder(amount, c)
+		ph := generatePlaceholder("update", c)
 		s := Field.name + " " + ph
 		m := map[string]interface{}{ph: amount}
 		c++
@@ -343,7 +343,7 @@ func (Field *Numeric) Add(amount float64) *UpdateExpression {
 /*Append appends an element to a list Field*/
 func (Field *dynamoListField) Append(a interface{}) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
-		ph := generatePlaceholder(a, c)
+		ph := generatePlaceholder("update", c)
 		s := fmt.Sprintf(Field.name+" = list_append(%s,"+Field.name+")", ph)
 		m := map[string]interface{}{ph: []interface{}{a}}
 		c++
@@ -354,7 +354,7 @@ func (Field *dynamoListField) Append(a interface{}) *UpdateExpression {
 
 func (Field *dynamoListField) Set(index int, a interface{}) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
-		ph := generatePlaceholder(a, c)
+		ph := generatePlaceholder("update", c)
 		s := fmt.Sprintf(Field.name+"[%d] = %s", index, ph)
 		m := map[string]interface{}{ph: []interface{}{a}}
 		c++
@@ -396,7 +396,7 @@ func (Field *dynamoMapField) Remove(key string) *UpdateExpression {
 
 func (Field *dynamoSetField) Add(a *dynamodb.AttributeValue) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
-		ph := generatePlaceholder(c, c)
+		ph := generatePlaceholder("update", c)
 		s := fmt.Sprintf(Field.name+" %s", ph)
 		m := map[string]interface{}{ph: a}
 
@@ -430,7 +430,7 @@ func (Field *dynamoSetField) AddString(a string) *UpdateExpression {
 
 func (Field *dynamoSetField) Delete(a *dynamodb.AttributeValue) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
-		ph := generatePlaceholder(a, c)
+		ph := generatePlaceholder("update", c)
 		s := fmt.Sprintf(Field.name+" %s", ph)
 		m := map[string]interface{}{ph: a}
 		c++
