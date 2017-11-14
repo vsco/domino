@@ -43,12 +43,12 @@ const (
 var nonalpha *regexp.Regexp = regexp.MustCompile("[^a-zA-Z_0-9]")
 
 func generatePlaceholder(a interface{}, counter uint) string {
-	r := fmt.Sprintf("%v_%d", a, counter)
+	r := fmt.Sprintf("%s_%d", "a", counter)
 	return ":" + nonalpha.ReplaceAllString(r, "_")
 }
 
 func generateNamePlaceholder(a interface{}, counter uint) string {
-	r := fmt.Sprintf("%v_%d", a, counter)
+	r := fmt.Sprintf("%s_%d","a", counter)
 	return "#" + nonalpha.ReplaceAllString(r, "_")
 }
 
