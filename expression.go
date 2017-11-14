@@ -373,7 +373,7 @@ func (Field *dynamoListField) Remove(index int) *UpdateExpression {
 
 func (Field *dynamoMapField) Set(key string, a interface{}) *UpdateExpression {
 	f := func(c uint) (string, map[string]*string, map[string]interface{}, uint) {
-		ph := generatePlaceholder(key, c)
+		ph := generatePlaceholder("update", c)
 		s := fmt.Sprintf("%s.%s = %s", Field.name, key, ph)
 		m := map[string]interface{}{
 			ph: a,
