@@ -421,8 +421,10 @@ func TestExpressions(t *testing.T) {
 		SetScanForward(true).
 		SetFilterExpression(expr)
 
-	expectedFilter := "registrationDate = :123_1 OR contains(lastName,:25_2) OR (NOT registrationDate = :345_3) OR (size(visits) <=:25_4 AND size(firstName) >=:25_5) OR registrationDate = :test_6 OR registrationDate <= :test_7 OR (registrationDate between :0_8 and :1_9) OR (registrationDate in (:0_10,:1_11))"
+	expectedFilter := "registrationDate = :filter_1 OR contains(lastName,:filter_2) OR (NOT registrationDate = :filter_3) OR (size(visits) <=:filter_4 AND size(firstName) >=:filter_5) OR registrationDate = :filter_6 OR registrationDate <= :filter_7 OR (registrationDate between :filter_8 and :filter_9) OR (registrationDate in (:filter_10,:filter_11))"
 	assert.Equal(t, expectedFilter, *q.Build().FilterExpression)
+
+	fmt.Println(*q.Build())
 
 	channel := make(chan *User)
 	errChan := q.ExecuteWith(ctx, db).StreamWithChannel(channel)
