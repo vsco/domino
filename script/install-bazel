@@ -5,7 +5,7 @@ set -e
 test "Darwin" = "$(uname)" && exit 1
 
 if [ -z "$BAZEL_VERSION" ]; then
-   BAZEL_VERSION="0.5.4"
+   BAZEL_VERSION="0.8.1"
 fi
 
 if [ -z "$BAZEL_INSTALL" ]; then
