@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -e
+
+# linux install only
+test "Darwin" = "$(uname)" && exit 1
+
+if [ -z "$BAZEL_VERSION" ]; then
+   BAZEL_VERSION="0.8.1"
+fi
+
+if [ -z "$BAZEL_INSTALL" ]; then
+   BAZEL_INSTALL="${HOME}/bazel/install"
+fi
+
+# if BAZEL_OUTPUT_BASE is set, create the directory and point all execution to that directory
+if [ -n "$BAZEL_OUTPUT_BASE" ]; then
+   mkdir -p $BAZEL_OUTPUT_BASE
+   echo "startup --output_base=${BAZEL_OUTPUT_BASE}" >> ~/.bazelrc
+fi
+
+# install bazel and return to previous directory
+mkdir -p $BAZEL_INSTALL
+pushd $BAZEL_INSTALL
+wget --no-clobber "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel_${BAZEL_VERSION}-linux-x86_64.deb"
+sudo dpkg -i "bazel_${BAZEL_VERSION}-linux-x86_64.deb"
+popd
+
