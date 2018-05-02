@@ -134,7 +134,7 @@ func TestCreateTable(t *testing.T) {
 	assert.NoError(t, err)
 	
 	// Test nil gsi range key
-	table.nameGlobalIndex.RangKey = nil
+	table.nameGlobalIndex.RangeKey = nil
 	
 	err = table.CreateTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
