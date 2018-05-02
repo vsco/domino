@@ -1530,7 +1530,7 @@ func (table DynamoTable) CreateTable() *createTable {
 		},
 	}
 
-	if !table.RangeKey.IsEmpty() {
+	if table.RangeKey != nil && !table.RangeKey.IsEmpty() {
 		rk := table.RangeKey.Name()
 		rkt := "RANGE"
 		rktt := table.RangeKey.Type()
@@ -1670,7 +1670,7 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 	}
 	d.AttributeDefinitions = append(d.AttributeDefinitions, pk)
 
-	if !gsi.RangeKey.IsEmpty() {
+	if gsi.RangeKey != nil && !gsi.RangeKey.IsEmpty() {
 		rk := &dynamodb.AttributeDefinition{
 			AttributeName: aws.String(gsi.RangeKey.Name()),
 			AttributeType: aws.String(gsi.RangeKey.Type()),
@@ -1703,7 +1703,6 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 
 func (d *createTable) Build() *dynamodb.CreateTableInput {
 	r := dynamodb.CreateTableInput(*d)
-	defer time.Sleep(time.Duration(500) * time.Millisecond)
 	return &r
 }
 
