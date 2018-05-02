@@ -127,6 +127,7 @@ func TestCreateTable(t *testing.T) {
 	
 	// Test nil range key
 	table.RangeKey = nil
+	table.LocalSecondaryIndexes = nil // Illegal to have an lsi, and no range key
 	err = table.CreateTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
 	
