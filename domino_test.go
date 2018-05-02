@@ -124,10 +124,23 @@ func TestCreateTable(t *testing.T) {
 	err = table.DeleteTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
 	
-// 	Test nil range key
+	// Test nil range key
 	table.RangeKey = nil
 	err = table.CreateTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
+	
+	err = table.DeleteTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+	
+	// Test nil gsi range key
+	table.nameGlobalIndex.RangKey = nil
+	
+	err = table.CreateTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+	
+	err = table.DeleteTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+
 }
 
 func TestGetItem(t *testing.T) {
