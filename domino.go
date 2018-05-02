@@ -393,7 +393,7 @@ func (table DynamoTable) GetItem(key KeyValue) *getInput {
 	q := getInput(dynamodb.GetItemInput{})
 	q.TableName = &table.Name
 	appendAttribute(&q.Key, table.PartitionKey.Name(), key.PartitionKey)
-	if !table.RangeKey.IsEmpty() {
+	if table.RangeKey != nil && !table.RangeKey.IsEmpty() {
 		appendAttribute(&q.Key, table.RangeKey.Name(), key.RangeKey)
 	}
 	return &q
@@ -485,7 +485,7 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGetInput {
 			m := map[string]interface{}{
 				table.PartitionKey.Name(): kv.PartitionKey,
 			}
-			if !table.RangeKey.IsEmpty() {
+			if table.RangeKey != nil && !table.RangeKey.IsEmpty() {
 				m[table.RangeKey.Name()] = kv.RangeKey
 			}
 
@@ -1740,7 +1740,7 @@ func appendKeyInterface(m *map[string]interface{}, table DynamoTable, key KeyVal
 	}
 	(*m)[table.PartitionKey.Name()] = key.PartitionKey
 
-	if !table.RangeKey.IsEmpty() {
+	if table.RangeKey != nil && !table.RangeKey.IsEmpty() {
 		(*m)[table.RangeKey.Name()] = key.RangeKey
 	}
 
@@ -1749,7 +1749,7 @@ func appendKeyAttribute(m *map[string]*dynamodb.AttributeValue, table DynamoTabl
 	err = appendAttribute(m, table.PartitionKey.Name(), key.PartitionKey)
 	if err != nil {
 		return
-	} else if !table.RangeKey.IsEmpty() {
+	} else if table.RangeKey != nil && !table.RangeKey.IsEmpty() {
 		err = appendAttribute(m, table.RangeKey.Name(), key.RangeKey)
 		if err != nil {
 			return
