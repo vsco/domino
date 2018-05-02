@@ -114,6 +114,22 @@ func NewDB() DynamoDBIFace {
 	return dynamodb.New(sess)
 }
 
+func TestCreateTable(t *testing.T) {
+	db := NewDB()
+	table := NewUserTable()
+	
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+	
+	err = table.DeleteTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+	
+// 	Test nil range key
+	table.RangeKey = nil
+	err = table.CreateTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+}
+
 func TestGetItem(t *testing.T) {
 
 	ctx := context.Background()
