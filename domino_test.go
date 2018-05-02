@@ -115,6 +115,7 @@ func NewDB() DynamoDBIFace {
 }
 
 func TestCreateTable(t *testing.T) {
+	ctx := context.Background()
 	db := NewDB()
 	table := NewUserTable()
 	
