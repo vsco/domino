@@ -498,6 +498,22 @@ func TestDynamoQuery(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, limit, len(results))
+
+	var values []DynamoDBValue
+
+	for {
+		var v []DynamoDBValue
+		var lastKey DynamoDBValue
+		v, lastKey, err = q.ExecuteWith(ctx, db).ResultsList()
+
+		if len(v) <= 0 || lastKey == nil {
+			break
+		}
+		values = append(values, v...)
+		q = q.WithLastEvaluatedKey(lastKey)
+		assert.NoError(t, err)
+	}
+	assert.Equal(t, 1000, len(values))
 }
 
 func TestDynamoStreamQuery(t *testing.T) {
@@ -640,7 +656,8 @@ func TestDynamoScan(t *testing.T) {
 	users := []interface{}{}
 
 	channel := make(chan *User)
-	errChan := table.Scan().SetLimit(limit).ExecuteWith(ctx, db).StreamWithChannel(channel)
+	q := table.Scan().SetLimit(limit)
+	errChan := q.ExecuteWith(ctx, db).StreamWithChannel(channel)
 
 SELECT:
 	for {
@@ -658,4 +675,23 @@ SELECT:
 
 	assert.NoError(t, err)
 	assert.Equal(t, limit, len(users))
+
+	var values []DynamoDBValue
+
+	for {
+		var v []DynamoDBValue
+		var lastKey DynamoDBValue
+		v, lastKey, err = q.ExecuteWith(ctx, db).ResultsList()
+
+		if len(v) <= 0 || lastKey == nil {
+			break
+		}
+		values = append(values, v...)
+		q = q.WithLastEvaluatedKey(lastKey)
+		assert.NoError(t, err)
+		assert.Equal(t, limit, len(v))
+	}
+
+	values = append(values, values...)
+	assert.True(t, len(values) >= limit)
 }
