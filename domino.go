@@ -1117,6 +1117,11 @@ func (d *QueryInput) WithConsumedCapacityHandler(f func(*dynamodb.ConsumedCapaci
 	return d
 }
 
+func (d *QueryInput) WithLastEvaluatedKey(key DynamoDBValue) *QueryInput {
+	d.ExclusiveStartKey = key
+	return d
+}
+
 func (d *QueryInput) SetFilterExpression(c Expression) *QueryInput {
 	s, n, m, _ := c.construct("filter", 1, true)
 	d.FilterExpression = &s
@@ -1156,9 +1161,6 @@ func (d *QueryInput) Build() *dynamodb.QueryInput {
  ** StreamWith ... Execute a dynamo Stream call with a passed in dynamodb instance and next item pointer
  ** ctx - An instance of context
  ** dynamo - The underlying dynamodb api
- ** nextItem - The item pointer which is copied and hydrated on every item. The function SHOULD NOT
- ** 		   store each item. It should simply return an empty struct pointer. Each of which is hydrated and pused on the
- ** 			returned channel.
  **
  */
 
@@ -1197,12 +1199,22 @@ func (d *QueryInput) ExecuteWith(ctx context.Context, db DynamoDBIFace, opts ...
 
 }
 
+/**
+ ** Results ... given a next() function, continually hydrates the returned interface. Results are comprehensive,
+ ** in that no manual paging (via LastEvaluatedKey) is required to fetch additional results.
+ ** next - function which returns successive structs for hydration.
+ **
+ */
+
 func (o *QueryOutput) Results(next func() interface{}) (err error) {
 	err = o.err
 	if err != nil || o.outputFunc == nil {
 		return
 	}
 	var count int64
+
+	//loop, calling output function until the results are empty
+	//output function transparently pages using LastEvaluatedKey internally
 	for {
 		var out *dynamodb.QueryOutput
 		if out, err = o.outputFunc(); err != nil {
@@ -1226,6 +1238,28 @@ func (o *QueryOutput) Results(next func() interface{}) (err error) {
 
 	}
 	return
+}
+
+/**
+ ** ResultsList ... Return a page of results, along with the LastEvaludatedKey or an error
+ ** Results can be hydrated to domain objects via the LoadDynamoDBValue function, if the domain object
+ ** implements the Loader interface.
+ **
+ */
+
+func (o *QueryOutput) ResultsList() (values []DynamoDBValue, LastEvaluatedKey DynamoDBValue, err error) {
+	var out *dynamodb.QueryOutput
+	if out, err = o.outputFunc(); err != nil {
+		return
+	}
+
+	LastEvaluatedKey = out.LastEvaluatedKey
+	for _, i := range out.Items {
+		values = append(values, i)
+	}
+
+	return
+
 }
 
 func (o *QueryOutput) StreamWithChannel(channel interface{}) (errChan chan error) {
@@ -1364,6 +1398,11 @@ func (d *ScanInput) SetGlobalIndex(idx GlobalSecondaryIndex) *ScanInput {
 	return d
 }
 
+func (d *ScanInput) WithLastEvaluatedKey(key DynamoDBValue) *ScanInput {
+	d.ExclusiveStartKey = key
+	return d
+}
+
 func (d *ScanInput) Build() *dynamodb.ScanInput {
 	r := dynamodb.ScanInput(*d.ScanInput)
 	if d.pageSize != nil {
@@ -1441,6 +1480,28 @@ func (o *ScanOutput) Results(next func() interface{}) (err error) {
 
 	}
 	return
+}
+
+/**
+ ** ResultsList ... Return a page of results, along with the LastEvaludatedKey or an error
+ ** Results can be hydrated to domain objects via the LoadDynamoDBValue function, if the domain object
+ ** implements the Loader interface.
+ **
+ */
+
+func (o *ScanOutput) ResultsList() (values []DynamoDBValue, LastEvaluatedKey DynamoDBValue, err error) {
+	var out *dynamodb.ScanOutput
+	if out, err = o.outputFunc(); err != nil {
+		return
+	}
+
+	LastEvaluatedKey = out.LastEvaluatedKey
+	for _, i := range out.Items {
+		values = append(values, i)
+	}
+
+	return
+
 }
 
 func (o *ScanOutput) StreamWithChannel(channel interface{}) (errChan chan error) {
