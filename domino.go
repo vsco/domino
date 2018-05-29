@@ -393,7 +393,7 @@ func (table DynamoTable) GetItem(key KeyValue) *getInput {
 	q := getInput(dynamodb.GetItemInput{})
 	q.TableName = &table.Name
 	appendAttribute(&q.Key, table.PartitionKey.Name(), key.PartitionKey)
-	if !table.RangeKey.IsEmpty() {
+	if table.RangeKey != nil && !table.RangeKey.IsEmpty() {
 		appendAttribute(&q.Key, table.RangeKey.Name(), key.RangeKey)
 	}
 	return &q
@@ -485,7 +485,7 @@ func (table DynamoTable) BatchGetItem(items ...KeyValue) *batchGetInput {
 			m := map[string]interface{}{
 				table.PartitionKey.Name(): kv.PartitionKey,
 			}
-			if !table.RangeKey.IsEmpty() {
+			if table.RangeKey != nil && !table.RangeKey.IsEmpty() {
 				m[table.RangeKey.Name()] = kv.RangeKey
 			}
 
@@ -1591,7 +1591,7 @@ func (table DynamoTable) CreateTable() *createTable {
 		},
 	}
 
-	if !table.RangeKey.IsEmpty() {
+	if table.RangeKey != nil && !table.RangeKey.IsEmpty() {
 		rk := table.RangeKey.Name()
 		rkt := "RANGE"
 		rktt := table.RangeKey.Type()
@@ -1731,7 +1731,7 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 	}
 	d.AttributeDefinitions = append(d.AttributeDefinitions, pk)
 
-	if !gsi.RangeKey.IsEmpty() {
+	if gsi.RangeKey != nil && !gsi.RangeKey.IsEmpty() {
 		rk := &dynamodb.AttributeDefinition{
 			AttributeName: aws.String(gsi.RangeKey.Name()),
 			AttributeType: aws.String(gsi.RangeKey.Type()),
@@ -1764,7 +1764,6 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 
 func (d *createTable) Build() *dynamodb.CreateTableInput {
 	r := dynamodb.CreateTableInput(*d)
-	defer time.Sleep(time.Duration(500) * time.Millisecond)
 	return &r
 }
 
@@ -1802,7 +1801,7 @@ func appendKeyInterface(m *map[string]interface{}, table DynamoTable, key KeyVal
 	}
 	(*m)[table.PartitionKey.Name()] = key.PartitionKey
 
-	if !table.RangeKey.IsEmpty() {
+	if table.RangeKey != nil && !table.RangeKey.IsEmpty() {
 		(*m)[table.RangeKey.Name()] = key.RangeKey
 	}
 
@@ -1811,7 +1810,7 @@ func appendKeyAttribute(m *map[string]*dynamodb.AttributeValue, table DynamoTabl
 	err = appendAttribute(m, table.PartitionKey.Name(), key.PartitionKey)
 	if err != nil {
 		return
-	} else if !table.RangeKey.IsEmpty() {
+	} else if table.RangeKey != nil && !table.RangeKey.IsEmpty() {
 		err = appendAttribute(m, table.RangeKey.Name(), key.RangeKey)
 		if err != nil {
 			return

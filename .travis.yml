@@ -5,15 +5,10 @@ services:
 
 env:
   global:
-    - BAZEL_VERSION=0.5.4
+    - BAZEL_VERSION=0.8.1
 
 before_install:
-  - mkdir -p ${HOME}/bazel/install
-  - pushd ${HOME}/bazel/install
-  - wget --no-clobber https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel_${BAZEL_VERSION}-linux-x86_64.deb
-  # - sha256sum -c tools/bazel_${BAZEL_VERSION}-linux-x86_64.deb.sha256
-  - sudo dpkg -i bazel_${BAZEL_VERSION}-linux-x86_64.deb
-  - popd
+  - script/install-bazel
 
 install:
   - bazel info
@@ -21,11 +16,6 @@ install:
 
 script:
   - bazel test --test_output=errors  //...
-
-cache:
-  timeout: 300
-  directories:
-    - $HOME/.vsco/bazel
 
 notifications:
   email: false

@@ -114,6 +114,37 @@ func NewDB() DynamoDBIFace {
 	return dynamodb.New(sess)
 }
 
+func TestCreateTable(t *testing.T) {
+	ctx := context.Background()
+	db := NewDB()
+	table := NewUserTable()
+	
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+	
+	err = table.DeleteTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+	
+	// Test nil range key
+	table.RangeKey = nil
+	table.LocalSecondaryIndexes = nil // Illegal to have an lsi, and no range key
+	err = table.CreateTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+	
+	err = table.DeleteTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+	
+	// Test nil gsi range key
+	table.nameGlobalIndex.RangeKey = nil
+	
+	err = table.CreateTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+	
+	err = table.DeleteTable().ExecuteWith(ctx, db)
+	assert.NoError(t, err)
+
+}
+
 func TestGetItem(t *testing.T) {
 
 	ctx := context.Background()
