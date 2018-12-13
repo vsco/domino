@@ -25,7 +25,7 @@ gazelle_dependencies()
 go_repository(
     name = "com_github_aws_aws_sdk_go",
     importpath="github.com/aws/aws-sdk-go",
-    commit="v1.8.16"
+    commit="v1.16.4"
 )
 go_repository(
     name = "com_github_stretchr_testify",
