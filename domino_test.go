@@ -118,28 +118,28 @@ func TestCreateTable(t *testing.T) {
 	ctx := context.Background()
 	db := NewDB()
 	table := NewUserTable()
-	
+
 	err := table.CreateTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
-	
+
 	err = table.DeleteTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
-	
+
 	// Test nil range key
 	table.RangeKey = nil
 	table.LocalSecondaryIndexes = nil // Illegal to have an lsi, and no range key
 	err = table.CreateTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
-	
+
 	err = table.DeleteTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
-	
+
 	// Test nil gsi range key
 	table.nameGlobalIndex.RangeKey = nil
-	
+
 	err = table.CreateTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
-	
+
 	err = table.DeleteTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
 
@@ -254,7 +254,7 @@ func TestBatchGetItem(t *testing.T) {
 	u := &User{Email: "bob@email.com", Password: "password"}
 	items := []interface{}{u}
 	kvs := []KeyValue{}
-	for i := 0; i < 200; i++ {
+	for i := 0; i < 198; i++ {
 		items = append(items, &User{Email: "bob@email.com", Password: "password" + strconv.Itoa(i)})
 		kvs = append(kvs, KeyValue{"bob@email.com", "password" + strconv.Itoa(i)})
 	}
@@ -283,7 +283,20 @@ func TestBatchGetItem(t *testing.T) {
 	err = g.ExecuteWith(ctx, db).Results(nextItem)
 
 	assert.NoError(t, err)
-	assert.Equal(t, len(users), 200)
+	assert.Equal(t, len(users), 198)
+
+	// TransactGetItems
+	users = []*User{}
+	tg := table.TransactGetItems(kvs...)
+	b, berr := tg.Build()
+	assert.NoError(t, berr)
+	assert.Equal(t, 20, len(b))
+
+	/*err = tg.ExecuteWith(ctx, db).Results(nextItem)
+
+	assert.NoError(t, err)
+	assert.Equal(t, len(users), 198)*/
+
 }
 
 func TestUpdateItem(t *testing.T) {
