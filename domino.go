@@ -779,6 +779,7 @@ type transactWriteItemsInput struct {
 	batches          []*dynamodb.TransactWriteItemsInput
 	table            DynamoTable
 	delayedFunctions []func() error
+	requestToken     string
 }
 type transactWriteItemsOutput struct {
 	*dynamoResult
@@ -788,110 +789,161 @@ type transactWriteItemsOutput struct {
 /*TransactWriteItems represents dynamo batch write item call*/
 func (table DynamoTable) TransactWriteItems() *transactWriteItemsInput {
 	r := transactWriteItemsInput{
-		batches: []*dynamodb.TransactWriteItemsInput{},
+		batches: nil,
 		table:   table,
 	}
 	return &r
 }
 
-func (d *transactWriteItemsInput) writeItems(items []interface{}, f func(DynamoDBValue) *dynamodb.TransactWriteItem) *transactWriteItemsInput {
-	if len(items) <= 0 {
-		return d
-	}
+func (d *transactWriteItemsInput) WithClientRequestToken(token string) *transactWriteItemsInput {
+	d.requestToken = token
+	return d
+}
+
+func (d *transactWriteItemsInput) writeItem(item interface{}, f func(DynamoDBValue) *dynamodb.TransactWriteItem) *transactWriteItemsInput {
+
 	delayed := func() error {
+		if d.batches == nil {
+			d.batches = []*dynamodb.TransactWriteItemsInput{}
+		}
+		batchLen := len(d.batches)
+
 		var batch *dynamodb.TransactWriteItemsInput
+		// Create a new batch if there are none, or the last batch >= 10
+		if batchLen == 0 || len(d.batches[batchLen-1].TransactItems) >= 10 {
+			batch = &dynamodb.TransactWriteItemsInput{}
+			d.batches = append(d.batches, batch)
+		} else {
+			batch = d.batches[batchLen-1]
+		}
 
-		for _, item := range items {
-			if batch == nil {
-				batch = &dynamodb.TransactWriteItemsInput{
-					TransactItems: []*dynamodb.TransactWriteItem{},
-				}
-				d.batches = append(d.batches, batch)
-			}
-
+		var write *dynamodb.TransactWriteItem
+		switch t := item.(type) {
+		case KeyValue:
+			m := make(map[string]*dynamodb.AttributeValue)
+			appendKeyAttribute(&m, d.table, t)
+			write = f(m)
+		default:
 			dynamoItem, err := dynamodbattribute.MarshalMap(item)
-
 			if err != nil {
 				return err
 			}
-
-			var write *dynamodb.TransactWriteItem
 			write = f(dynamoItem)
-			batch.TransactItems = append(batch.TransactItems, write)
+		}
 
-			if len(batch.TransactItems) >= 10 {
-				batch = nil
-			}
+		batch.TransactItems = append(batch.TransactItems, write)
+
+		if len(batch.TransactItems) >= 10 {
+			batch = nil
 		}
 
 		return nil
 	}
+
 	d.delayedFunctions = append(d.delayedFunctions, delayed)
 
 	return d
 }
 
 func (d *transactWriteItemsInput) PutItem(item interface{}, c ...Expression) *transactWriteItemsInput {
-
-	return d.writeItems(items, func(v DynamoDBValue) *dynamodb.TransactWriteItem {
+	i := d.table.PutItem(item)
+	if len(c) > 0 {
+		i.SetConditionExpression(c[0])
+	}
+	return d.writeItem(item, func(v DynamoDBValue) *dynamodb.TransactWriteItem {
 		r := &dynamodb.TransactWriteItem{
 			Put: &dynamodb.Put{
 				Item:      v,
 				TableName: &d.table.Name,
 			},
 		}
-		if len(c) > 0 {
-			s, n, m, _ := c[0].construct("cond", 1, true)
-			r.Put.ConditionExpression = &s
+		b := i.Build()
+		r.Put.ConditionExpression = b.ConditionExpression
+		r.Put.ExpressionAttributeNames = b.ExpressionAttributeNames
+		r.Put.ExpressionAttributeValues = b.ExpressionAttributeValues
 
-			r.Put.ExpressionAttributeNames = n
-			r.Put.ExpressionAttributeValues = marshal(m)
-		}
 		return r
 
 	})
 }
 
-func (d *transactWriteItemsInput) UpdateItem(item interface{}, c ...Expression) *transactWriteItemsInput {
-	return d.writeItems(items, func(v DynamoDBValue) *dynamodb.TransactWriteItem {
+func (d *transactWriteItemsInput) UpdateItem(key KeyValue, update *UpdateExpression, c ...Expression) *transactWriteItemsInput {
+
+	i := d.table.UpdateItem(key).SetUpdateExpression(update)
+	if len(c) > 0 {
+		i.SetConditionExpression(c[0])
+	}
+	return d.writeItem(key, func(v DynamoDBValue) *dynamodb.TransactWriteItem {
 		r := &dynamodb.TransactWriteItem{
-			Put: &dynamodb.Update{
-				Item:      v,
+			Update: &dynamodb.Update{
+				Key:       v,
 				TableName: &d.table.Name,
 			},
 		}
-		if len(c) > 0 {
-			s, n, m, _ := c[0].construct("cond", 1, true)
-			r.Put.ConditionExpression = &s
+		b, _ := i.Build()
+		r.Update.ConditionExpression = b.ConditionExpression
+		r.Update.UpdateExpression = b.UpdateExpression
+		r.Update.ExpressionAttributeNames = b.ExpressionAttributeNames
+		r.Update.ExpressionAttributeValues = b.ExpressionAttributeValues
 
-			r.Put.ExpressionAttributeNames = n
-			r.Put.ExpressionAttributeValues = marshal(m)
-		}
 		return r
 	})
 }
-func (d *transactWriteItemsInput) DeleteItem(keys KeyValue, c ...Condition) *transactWriteItemsInput {
-	a := []interface{}{}
-	for _, key := range keys {
-		m := map[string]interface{}{}
-		appendKeyInterface(&m, d.table, key)
-		a = append(a, m)
+func (d *transactWriteItemsInput) DeleteItem(key KeyValue, c ...Expression) *transactWriteItemsInput {
+
+	i := d.table.DeleteItem(key)
+	if len(c) > 0 {
+		i.SetConditionExpression(c[0])
 	}
-	return d.writeItems(a, func(v DynamoDBValue) *dynamodb.TransactWriteItem {
-		return &dynamodb.TransactWriteItem{
+
+	return d.writeItem(key, func(v DynamoDBValue) *dynamodb.TransactWriteItem {
+		r := &dynamodb.TransactWriteItem{
 			Delete: &dynamodb.Delete{
 				Key:       v,
 				TableName: &d.table.Name,
 			},
 		}
+
+		b := i.Build()
+		r.Delete.ConditionExpression = b.ConditionExpression
+		r.Delete.ExpressionAttributeNames = b.ExpressionAttributeNames
+		r.Delete.ExpressionAttributeValues = b.ExpressionAttributeValues
+
+		return r
 	})
 
+}
+
+func (d *transactWriteItemsInput) ConditionCheck(key KeyValue, c Expression) *transactWriteItemsInput {
+
+	return d.writeItem(key, func(v DynamoDBValue) *dynamodb.TransactWriteItem {
+
+		r := &dynamodb.TransactWriteItem{
+			ConditionCheck: &dynamodb.ConditionCheck{
+				Key:       v,
+				TableName: &d.table.Name,
+			},
+		}
+
+		s, n, m, _ := c.construct("cond", 1, true)
+		r.ConditionCheck.ConditionExpression = &s
+
+		r.ConditionCheck.ExpressionAttributeNames = n
+		r.ConditionCheck.ExpressionAttributeValues = marshal(m)
+
+		return r
+	})
 }
 
 func (d *transactWriteItemsInput) Build() (input []*dynamodb.TransactWriteItemsInput, err error) {
 	for _, function := range d.delayedFunctions {
 		if err = function(); err != nil {
 			return
+		}
+	}
+	if d.requestToken != "" {
+		for _, b := range d.batches {
+			b.ClientRequestToken = &d.requestToken
 		}
 	}
 	input = d.batches
@@ -1855,6 +1907,7 @@ func (table DynamoTable) CreateTable() *createTable {
 		k = append(k, &dynamodb.KeySchemaElement{AttributeName: &rk, KeyType: &rkt})
 		a = append(a, &dynamodb.AttributeDefinition{AttributeName: &rk, AttributeType: &rktt})
 	}
+
 	t := dynamodb.CreateTableInput{
 		TableName:             &table.Name,
 		KeySchema:             k,
@@ -2019,8 +2072,18 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 	return d
 }
 
-func (d *createTable) Build() *dynamodb.CreateTableInput {
-	r := dynamodb.CreateTableInput(*d)
+func (c *createTable) Build() *dynamodb.CreateTableInput {
+	// Dedupe attribute defns
+	at := make(map[string]*dynamodb.AttributeDefinition)
+	for _, t := range c.AttributeDefinitions {
+		at[*t.AttributeName] = t
+	}
+	c.AttributeDefinitions = nil
+
+	for _, v := range at {
+		c.AttributeDefinitions = append(c.AttributeDefinitions, v)
+	}
+	r := dynamodb.CreateTableInput(*c)
 	return &r
 }
 

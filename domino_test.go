@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -59,11 +60,10 @@ func NewUserTable() UserTable {
 	reg := NumericField("registrationDate")
 
 	nameGlobalIndex := GlobalSecondaryIndex{
-		Name:             "name-index",
-		PartitionKey:     firstName,
-		RangeKey:         lastName,
-		ProjectionType:   ProjectionTypeINCLUDE,
-		NonKeyAttributes: []DynamoFieldIFace{lastName, reg},
+		Name:           "name-index",
+		PartitionKey:   firstName,
+		RangeKey:       lastName,
+		ProjectionType: ProjectionTypeALL,
 	}
 
 	registrationDateIndex := LocalSecondaryIndex{
@@ -292,10 +292,10 @@ func TestBatchGetItem(t *testing.T) {
 	assert.NoError(t, berr)
 	assert.Equal(t, 20, len(b))
 
-	/*err = tg.ExecuteWith(ctx, db).Results(nextItem)
-
-	assert.NoError(t, err)
-	assert.Equal(t, len(users), 198)*/
+	/* TODO: Once dynamodb-local has transaction support, uncomment the following: */
+	// err = tg.ExecuteWith(ctx, db).Results(nextItem)
+	// assert.NoError(t, err)
+	// assert.Equal(t, len(users), 198)
 
 }
 
@@ -431,6 +431,81 @@ func TestPutItem(t *testing.T) {
 	assert.NotEmpty(t, out.Item)
 }
 
+func TestTransactWriteItems(t *testing.T) {
+	table := NewUserTable()
+	db := NewDB()
+	ctx := context.Background()
+
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
+
+	assert.NoError(t, err)
+
+	items := make(map[string]User)
+	updates := make(map[interface{}]KeyValue)
+	deletes := make(map[interface{}]KeyValue)
+	conditions := make(map[interface{}]KeyValue)
+
+	q := table.TransactWriteItems().WithClientRequestToken("token")
+
+	for i := 0; i < 100; i++ {
+
+		ikey := fmt.Sprintf("joe@email%d.com", i)
+		items[ikey] = User{Email: ikey, Password: "password"}
+		ukey := fmt.Sprintf("name%d@email.com", i)
+		updates[ukey] = KeyValue{ukey, "password"}
+		dkey := fmt.Sprintf("test%d@email.com", i)
+		deletes[dkey] = KeyValue{dkey, "password"}
+		ckey := fmt.Sprintf("testcondition%d@email.com", i)
+		conditions[ckey] = KeyValue{ckey, "password"}
+
+		q = q.PutItem(items[ikey], table.registrationDate.Equals(123)).
+			UpdateItem(updates[ukey], table.emailField.SetField("nonname@email.com", false),
+				table.emailField.Equals("name@email.com")).
+			DeleteItem(deletes[dkey], table.registrationDate.Equals(123)).
+			ConditionCheck(conditions[ckey], table.registrationDate.Equals(123))
+	}
+
+	var out []*dynamodb.TransactWriteItemsInput
+	out, err = q.Build()
+	fmt.Println(out)
+	assert.NoError(t, err)
+	assert.Equal(t, 40, len(out))
+
+	for _, ti := range out {
+		assert.Equal(t, aws.String("token"), ti.ClientRequestToken)
+		assert.Equal(t, 10, len(ti.TransactItems))
+		for _, it := range ti.TransactItems {
+
+			if it.Put != nil {
+				v, _ := dynamodbattribute.MarshalMap(items[*it.Put.Item["email"].S])
+				assert.Equal(t, v, it.Put.Item)
+				assert.NotNil(t, it.Put.ConditionExpression)
+			} else if it.Delete != nil {
+				m := make(map[string]*dynamodb.AttributeValue)
+				appendKeyAttribute(&m, table.DynamoTable, deletes[*it.Delete.Key["email"].S])
+				assert.Equal(t, m, it.Delete.Key)
+				assert.NotNil(t, it.Delete.ConditionExpression)
+			} else if it.Update != nil {
+				m := make(map[string]*dynamodb.AttributeValue)
+				appendKeyAttribute(&m, table.DynamoTable, updates[*it.Update.Key["email"].S])
+				assert.Equal(t, m, it.Update.Key)
+				assert.NotNil(t, it.Update.UpdateExpression)
+				assert.NotNil(t, it.Update.ConditionExpression)
+			} else if it.ConditionCheck != nil {
+				m := make(map[string]*dynamodb.AttributeValue)
+				appendKeyAttribute(&m, table.DynamoTable, conditions[*it.ConditionCheck.Key["email"].S])
+				assert.Equal(t, m, it.ConditionCheck.Key)
+				assert.NotNil(t, it.ConditionCheck.ConditionExpression)
+			}
+
+		}
+	}
+
+	// TODO: Run this against live instance once dynamodb-local has transaction support
+
+}
+
 func TestExpressions(t *testing.T) {
 	table := NewUserTable()
 	db := NewDB()
@@ -468,7 +543,7 @@ func TestExpressions(t *testing.T) {
 	expectedFilter := "registrationDate = :filter_1 OR contains(lastName,:filter_2) OR (NOT registrationDate = :filter_3) OR (size(visits) <=:filter_4 AND size(firstName) >=:filter_5) OR registrationDate = :filter_6 OR registrationDate <= :filter_7 OR (registrationDate between :filter_8 and :filter_9) OR (registrationDate in (:filter_10,:filter_11))"
 	assert.Equal(t, expectedFilter, *q.Build().FilterExpression)
 
-	fmt.Println(*q.Build())
+	// fmt.Println(*q.Build())
 
 	channel := make(chan *User)
 	errChan := q.ExecuteWith(ctx, db).StreamWithChannel(channel)
