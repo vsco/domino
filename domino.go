@@ -104,6 +104,10 @@ const (
 	ProjectionTypeKEYS_ONLY = "KEYS_ONLY"
 )
 
+const (
+	DynamoBatchSize	= 10
+)
+
 /*DynamoTable is a static table definition representing a dynamo table*/
 type DynamoTable struct {
 	Name                   string
@@ -629,7 +633,7 @@ func (table DynamoTable) TransactGetItems(items ...KeyValue) *transactGetInput {
 	var j int
 	for i, kv := range items {
 		// Segment into groups of 10
-		if i%10 == 0 {
+		if i%DynamoBatchSize == 0 {
 			tgi = &dynamodb.TransactGetItemsInput{}
 			input[j] = tgi
 			j = j + 1
@@ -810,7 +814,7 @@ func (d *transactWriteItemsInput) writeItem(item interface{}, f func(DynamoDBVal
 
 		var batch *dynamodb.TransactWriteItemsInput
 		// Create a new batch if there are none, or the last batch >= 10
-		if batchLen == 0 || len(d.batches[batchLen-1].TransactItems) >= 10 {
+		if batchLen == 0 || len(d.batches[batchLen-1].TransactItems) >= DynamoBatchSize {
 			batch = &dynamodb.TransactWriteItemsInput{}
 			d.batches = append(d.batches, batch)
 		} else {
@@ -833,7 +837,7 @@ func (d *transactWriteItemsInput) writeItem(item interface{}, f func(DynamoDBVal
 
 		batch.TransactItems = append(batch.TransactItems, write)
 
-		if len(batch.TransactItems) >= 10 {
+		if len(batch.TransactItems) >= DynamoBatchSize {
 			batch = nil
 		}
 
@@ -2019,12 +2023,12 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 	if gsi.ReadUnits != 0 {
 		gsir = &gsi.ReadUnits
 	} else {
-		gsir = aws.Int64(10)
+		gsir = aws.Int64(DynamoBatchSize)
 	}
 	if gsi.WriteUnits != 0 {
 		gsiw = &gsi.WriteUnits
 	} else {
-		gsiw = aws.Int64(10)
+		gsiw = aws.Int64(DynamoBatchSize)
 	}
 
 	keySchema := []*dynamodb.KeySchemaElement{
