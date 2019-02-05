@@ -292,10 +292,9 @@ func TestBatchGetItem(t *testing.T) {
 	assert.NoError(t, berr)
 	assert.Equal(t, 20, len(b))
 
-	/* TODO: Once dynamodb-local has transaction support, uncomment the following: */
-	// err = tg.ExecuteWith(ctx, db).Results(nextItem)
-	// assert.NoError(t, err)
-	// assert.Equal(t, len(users), 198)
+	err = tg.ExecuteWith(ctx, db).Results(nextItem)
+	assert.NoError(t, err)
+	assert.Equal(t, len(users), 198)
 
 }
 
@@ -502,7 +501,7 @@ func TestTransactWriteItems(t *testing.T) {
 		}
 	}
 
-	// TODO: Run this against live instance once dynamodb-local has transaction support
+	
 
 }
 
