@@ -455,13 +455,12 @@ func TestTransactWriteItems(t *testing.T) {
 		updates[ikey] = KeyValue{ikey, "password"}
 		dkey := fmt.Sprintf("test%d@email.com", i)
 		deletes[dkey] = KeyValue{dkey, "password"}
-		ckey := fmt.Sprintf("testcondition%d@email.com", i)
-		conditions[ckey] = KeyValue{ckey, "password"}
+		conditions[ikey] = KeyValue{ikey, "password"}
 
 		q = q.PutItem(items[ikey], table.registrationDate.Equals(123)).
 			UpdateItem(updates[ikey], table.emailField.SetField("nonname@email.com", false), table.emailField.Equals(ikey)).
 			DeleteItem(deletes[dkey], table.registrationDate.Equals(123)).
-			ConditionCheck(conditions[ckey], table.registrationDate.Equals(123))
+			ConditionCheck(conditions[ikey], table.registrationDate.Equals(123))
 	}
 
 	var out *dynamodb.TransactWriteItemsInput
@@ -498,12 +497,12 @@ func TestTransactWriteItems(t *testing.T) {
 	}
 
 	// Put
-	qb := table.BatchWriteItem()
+	qb := table.TransactWriteItems()
 	for _, v := range items {
-		qb = qb.PutItems(v)
+		qb = qb.PutItem(v)
 	}
 
-	err = qb.ExecuteWith(ctx, db).Results(nil)
+	_, err = qb.ExecuteWith(ctx, db).Results()
 	assert.NoError(t, err)
 
 	var results []User
@@ -523,6 +522,21 @@ func TestTransactWriteItems(t *testing.T) {
 
 	_, err = q.ExecuteWith(ctx, db).Results()
 	assert.NoError(t, err)
+
+	// Condition Check
+	q = table.TransactWriteItems()
+	for _, v := range conditions {
+		q = q.ConditionCheck(v, table.name.Equals("nonname"))
+	}
+	_, err = q.ExecuteWith(ctx, db).Results()
+	assert.NoError(t, err)
+
+	q = table.TransactWriteItems()
+	for _, v := range conditions {
+		q = q.ConditionCheck(v, table.name.Equals("nonname2"))
+	}
+	_, err = q.ExecuteWith(ctx, db).Results()
+	assert.Error(t, err)
 
 	// Delete
 	q = table.TransactWriteItems()
