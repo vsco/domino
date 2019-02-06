@@ -41,15 +41,15 @@ type UserTable struct {
 }
 
 type User struct {
-	Email       string            `json:"email,omitempty"`
-	Password    string            `json:"password,omitempty"`
+	Email       string            `dynamodbav:"email,omitempty"`
+	Password    string            `dynamodbav:"password,omitempty"`
 	Visits      []int64           `dynamodbav:"visits,numberset,omitempty"`
 	Degrees     []float64         `dynamodbav:"degrees,numberset,omitempty"`
 	Locales     []string          `dynamodbav:"locales,stringset,omitempty"`
-	LoginCount  int               `json:"loginCount,omitempty"`
-	LoginDate   int64             `json:"lastLoginDate,omitempty"`
-	RegDate     int64             `json:"registrationDate,omitempty"`
-	Preferences map[string]string `json:"preferences,omitempty"`
+	LoginCount  int               `dynamodbav:"loginCount,omitempty"`
+	LoginDate   int64             `dynamodbav:"lastLoginDate,omitempty"`
+	RegDate     int64             `dynamodbav:"registrationDate,omitempty"`
+	Preferences map[string]string `dynamodbav:"preferences,omitempty"`
 }
 
 func NewUserTable() UserTable {
@@ -440,6 +440,7 @@ func TestTransactWriteItems(t *testing.T) {
 
 	assert.NoError(t, err)
 
+	users := []User{}
 	items := make(map[string]User)
 	updates := make(map[interface{}]KeyValue)
 	deletes := make(map[interface{}]KeyValue)
@@ -447,61 +448,98 @@ func TestTransactWriteItems(t *testing.T) {
 
 	q := table.TransactWriteItems().WithClientRequestToken("token")
 
-	for i := 0; i < 100; i++ {
-
+	for i := 0; i < 2; i++ {
 		ikey := fmt.Sprintf("joe@email%d.com", i)
-		items[ikey] = User{Email: ikey, Password: "password"}
-		ukey := fmt.Sprintf("name%d@email.com", i)
-		updates[ukey] = KeyValue{ukey, "password"}
+		items[ikey] = User{Email: ikey, Password: "password", LoginCount: 1}
+		users = append(users, items[ikey])
+		updates[ikey] = KeyValue{ikey, "password"}
 		dkey := fmt.Sprintf("test%d@email.com", i)
 		deletes[dkey] = KeyValue{dkey, "password"}
 		ckey := fmt.Sprintf("testcondition%d@email.com", i)
 		conditions[ckey] = KeyValue{ckey, "password"}
 
 		q = q.PutItem(items[ikey], table.registrationDate.Equals(123)).
-			UpdateItem(updates[ukey], table.emailField.SetField("nonname@email.com", false),
-				table.emailField.Equals("name@email.com")).
+			UpdateItem(updates[ikey], table.emailField.SetField("nonname@email.com", false), table.emailField.Equals(ikey)).
 			DeleteItem(deletes[dkey], table.registrationDate.Equals(123)).
 			ConditionCheck(conditions[ckey], table.registrationDate.Equals(123))
 	}
 
-	var out []*dynamodb.TransactWriteItemsInput
+	var out *dynamodb.TransactWriteItemsInput
 	out, err = q.Build()
-	fmt.Println(out)
 	assert.NoError(t, err)
-	assert.Equal(t, 40, len(out))
 
-	for _, ti := range out {
-		assert.Equal(t, aws.String("token"), ti.ClientRequestToken)
-		assert.Equal(t, 10, len(ti.TransactItems))
-		for _, it := range ti.TransactItems {
+	assert.Equal(t, 2*4, len(out.TransactItems))
 
-			if it.Put != nil {
-				v, _ := dynamodbattribute.MarshalMap(items[*it.Put.Item["email"].S])
-				assert.Equal(t, v, it.Put.Item)
-				assert.NotNil(t, it.Put.ConditionExpression)
-			} else if it.Delete != nil {
-				m := make(map[string]*dynamodb.AttributeValue)
-				appendKeyAttribute(&m, table.DynamoTable, deletes[*it.Delete.Key["email"].S])
-				assert.Equal(t, m, it.Delete.Key)
-				assert.NotNil(t, it.Delete.ConditionExpression)
-			} else if it.Update != nil {
-				m := make(map[string]*dynamodb.AttributeValue)
-				appendKeyAttribute(&m, table.DynamoTable, updates[*it.Update.Key["email"].S])
-				assert.Equal(t, m, it.Update.Key)
-				assert.NotNil(t, it.Update.UpdateExpression)
-				assert.NotNil(t, it.Update.ConditionExpression)
-			} else if it.ConditionCheck != nil {
-				m := make(map[string]*dynamodb.AttributeValue)
-				appendKeyAttribute(&m, table.DynamoTable, conditions[*it.ConditionCheck.Key["email"].S])
-				assert.Equal(t, m, it.ConditionCheck.Key)
-				assert.NotNil(t, it.ConditionCheck.ConditionExpression)
-			}
+	assert.Equal(t, aws.String("token"), out.ClientRequestToken)
 
+	for _, it := range out.TransactItems {
+
+		if it.Put != nil {
+			v, _ := dynamodbattribute.MarshalMap(items[*it.Put.Item["email"].S])
+			assert.Equal(t, v, it.Put.Item)
+			assert.NotNil(t, it.Put.ConditionExpression)
+		} else if it.Delete != nil {
+			m := make(map[string]*dynamodb.AttributeValue)
+			appendKeyAttribute(&m, table.DynamoTable, deletes[*it.Delete.Key["email"].S])
+			assert.Equal(t, m, it.Delete.Key)
+			assert.NotNil(t, it.Delete.ConditionExpression)
+		} else if it.Update != nil {
+			m := make(map[string]*dynamodb.AttributeValue)
+			appendKeyAttribute(&m, table.DynamoTable, updates[*it.Update.Key["email"].S])
+			assert.Equal(t, m, it.Update.Key)
+			assert.NotNil(t, it.Update.UpdateExpression)
+			assert.NotNil(t, it.Update.ConditionExpression)
+		} else if it.ConditionCheck != nil {
+			m := make(map[string]*dynamodb.AttributeValue)
+			appendKeyAttribute(&m, table.DynamoTable, conditions[*it.ConditionCheck.Key["email"].S])
+			assert.Equal(t, m, it.ConditionCheck.Key)
+			assert.NotNil(t, it.ConditionCheck.ConditionExpression)
 		}
 	}
 
-	
+	// Put
+	qb := table.BatchWriteItem()
+	for _, v := range items {
+		qb = qb.PutItems(v)
+	}
+
+	err = qb.ExecuteWith(ctx, db).Results(nil)
+	assert.NoError(t, err)
+
+	var results []User
+
+	err = table.Scan().ExecuteWith(ctx, db).Results(func() interface{} {
+		results = append(results, User{})
+		return &results[len(results)-1]
+	})
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, users, results)
+
+	// Update
+	q = table.TransactWriteItems()
+	for _, v := range updates {
+		q = q.UpdateItem(v, table.name.SetField("nonname", false), table.loginCount.Equals(1))
+	}
+
+	_, err = q.ExecuteWith(ctx, db).Results()
+	assert.NoError(t, err)
+
+	// Delete
+	q = table.TransactWriteItems()
+	for _, v := range updates {
+		q = q.DeleteItem(v, table.loginCount.Equals(1))
+	}
+
+	_, err = q.ExecuteWith(ctx, db).Results()
+	assert.NoError(t, err)
+
+	results = nil
+	err = table.Scan().ExecuteWith(ctx, db).Results(func() interface{} {
+		results = append(results, User{})
+		return &results[len(results)-1]
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(results))
 
 }
 

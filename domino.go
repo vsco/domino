@@ -2,6 +2,7 @@ package domino
 
 import (
 	"context"
+	"errors"
 	"math"
 	"reflect"
 	"time"
@@ -105,7 +106,11 @@ const (
 )
 
 const (
-	DynamoBatchSize	= 10
+	DynamoBatchSize = 10
+)
+
+var (
+	BatchSizeExceededError = errors.New("TransactItems batch size maximum of 10 exceeded. Reduce the number of items to write.")
 )
 
 /*DynamoTable is a static table definition representing a dynamo table*/
@@ -780,45 +785,37 @@ func (o *putOutput) Result(item interface{}) (err error) {
 /************************************** TransactWriteItems *********************************/
 /***************************************************************************************/
 type transactWriteItemsInput struct {
-	batches          []*dynamodb.TransactWriteItemsInput
+	*dynamodb.TransactWriteItemsInput
 	table            DynamoTable
 	delayedFunctions []func() error
-	requestToken     string
 }
+
 type transactWriteItemsOutput struct {
 	*dynamoResult
-	results []*dynamodb.TransactWriteItemsOutput
+	results *dynamodb.TransactWriteItemsOutput
 }
 
 /*TransactWriteItems represents dynamo batch write item call*/
 func (table DynamoTable) TransactWriteItems() *transactWriteItemsInput {
 	r := transactWriteItemsInput{
-		batches: nil,
-		table:   table,
+		TransactWriteItemsInput: &dynamodb.TransactWriteItemsInput{},
+		table: table,
 	}
 	return &r
 }
 
 func (d *transactWriteItemsInput) WithClientRequestToken(token string) *transactWriteItemsInput {
-	d.requestToken = token
+	d.ClientRequestToken = &token
 	return d
 }
 
 func (d *transactWriteItemsInput) writeItem(item interface{}, f func(DynamoDBValue) *dynamodb.TransactWriteItem) *transactWriteItemsInput {
 
 	delayed := func() error {
-		if d.batches == nil {
-			d.batches = []*dynamodb.TransactWriteItemsInput{}
-		}
-		batchLen := len(d.batches)
 
-		var batch *dynamodb.TransactWriteItemsInput
-		// Create a new batch if there are none, or the last batch >= 10
-		if batchLen == 0 || len(d.batches[batchLen-1].TransactItems) >= DynamoBatchSize {
-			batch = &dynamodb.TransactWriteItemsInput{}
-			d.batches = append(d.batches, batch)
-		} else {
-			batch = d.batches[batchLen-1]
+		// Error if batch size exceeds DynamoBatchSize
+		if len(d.TransactItems) > DynamoBatchSize {
+			return BatchSizeExceededError
 		}
 
 		var write *dynamodb.TransactWriteItem
@@ -835,11 +832,7 @@ func (d *transactWriteItemsInput) writeItem(item interface{}, f func(DynamoDBVal
 			write = f(dynamoItem)
 		}
 
-		batch.TransactItems = append(batch.TransactItems, write)
-
-		if len(batch.TransactItems) >= DynamoBatchSize {
-			batch = nil
-		}
+		d.TransactItems = append(d.TransactItems, write)
 
 		return nil
 	}
@@ -939,18 +932,14 @@ func (d *transactWriteItemsInput) ConditionCheck(key KeyValue, c Expression) *tr
 	})
 }
 
-func (d *transactWriteItemsInput) Build() (input []*dynamodb.TransactWriteItemsInput, err error) {
+func (d *transactWriteItemsInput) Build() (input *dynamodb.TransactWriteItemsInput, err error) {
 	for _, function := range d.delayedFunctions {
 		if err = function(); err != nil {
 			return
 		}
 	}
-	if d.requestToken != "" {
-		for _, b := range d.batches {
-			b.ClientRequestToken = &d.requestToken
-		}
-	}
-	input = d.batches
+
+	input = d.TransactWriteItemsInput
 	return
 }
 
@@ -959,26 +948,18 @@ func (d *transactWriteItemsInput) ExecuteWith(ctx context.Context, dynamo Dynamo
 		dynamoResult: &dynamoResult{},
 	}
 
-	batches, err := d.Build()
+	input, err := d.Build()
 	if err != nil {
 		out.err = err
 		return
 	}
-	for _, batch := range batches {
-		result, err := dynamo.TransactWriteItemsWithContext(ctx, batch, opts...)
-		if err != nil {
-			out.err = err
-			return
-		}
-		out.results = append(out.results, result)
-	}
+	out.results, out.err = dynamo.TransactWriteItemsWithContext(ctx, input, opts...)
 
 	return
 }
 
-func (d *transactWriteItemsOutput) Results() (err error) {
-	err = d.Error()
-	return
+func (d *transactWriteItemsOutput) Results() (*dynamodb.TransactWriteItemsOutput, error) {
+	return d.results, d.Error()
 }
 
 /***************************************************************************************/

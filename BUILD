@@ -37,7 +37,7 @@ go_test(
 genrule(
     name = "dynamodb",
     outs = ["dynamodb-local-run-id"],
-    cmd = "docker stop dynamodb-local || true; docker rm -f dynamodb-local || true; docker run -d -p 4569:8000 --name dynamodb-local amazon/dynamodb-local:latest > $@",
+    cmd = "docker stop dynamodb-local || true; docker rm -f dynamodb-local || true; docker run -d -p 4569:8000 --name dynamodb-local amazon/dynamodb-local:1.11.475 > $@",
     local = 1,
     message = "Spinning up dynamo-db container...",
     visibility = ["//visibility:public"],

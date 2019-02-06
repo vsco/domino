@@ -30,7 +30,7 @@ go_repository(
 go_repository(
     name = "com_github_stretchr_testify",
     importpath="github.com/stretchr/testify",
-    commit="f6abca593680b2315d2075e0f5e2a9751e3f431a"
+    tag = "v1.2.2"
 )
 go_repository(
     name = "com_github_go_ini_ini",
