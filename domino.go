@@ -2,6 +2,8 @@ package domino
 
 import (
 	"context"
+	"errors"
+	"math"
 	"reflect"
 	"time"
 
@@ -24,6 +26,8 @@ type DynamoDBIFace interface {
 	UpdateItemWithContext(aws.Context, *dynamodb.UpdateItemInput, ...request.Option) (*dynamodb.UpdateItemOutput, error)
 	DeleteItemWithContext(aws.Context, *dynamodb.DeleteItemInput, ...request.Option) (*dynamodb.DeleteItemOutput, error)
 	BatchWriteItemWithContext(aws.Context, *dynamodb.BatchWriteItemInput, ...request.Option) (*dynamodb.BatchWriteItemOutput, error)
+	TransactGetItemsWithContext(aws.Context, *dynamodb.TransactGetItemsInput, ...request.Option) (*dynamodb.TransactGetItemsOutput, error)
+	TransactWriteItemsWithContext(aws.Context, *dynamodb.TransactWriteItemsInput, ...request.Option) (*dynamodb.TransactWriteItemsOutput, error)
 }
 
 type DynamoDBValue map[string]*dynamodb.AttributeValue
@@ -99,6 +103,14 @@ const (
 	ProjectionTypeALL       = "ALL"
 	ProjectionTypeINCLUDE   = "INCLUDE"
 	ProjectionTypeKEYS_ONLY = "KEYS_ONLY"
+)
+
+const (
+	DynamoBatchSize = 10
+)
+
+var (
+	BatchSizeExceededError = errors.New("TransactItems batch size maximum of 10 exceeded. Reduce the number of items to write.")
 )
 
 /*DynamoTable is a static table definition representing a dynamo table*/
@@ -600,6 +612,107 @@ func (o *batchGetOutput) Results(nextItem func() interface{}) (err error) {
 }
 
 /***************************************************************************************/
+/************************************** TransactGetItems ***********************************/
+/***************************************************************************************/
+type transactGetInput struct {
+	input []*dynamodb.TransactGetItemsInput
+}
+type transactGetOutput struct {
+	*dynamoResult
+	results []*dynamodb.TransactGetItemsOutput
+}
+
+/*TransactGetItems represents dynamo transact get items call*/
+/*Maximum of 10 items are allowed to be fetched, per call. If more are requested,
+they will be segmented and fetched in batches of 10*/
+func (table DynamoTable) TransactGetItems(items ...KeyValue) *transactGetInput {
+	r := &transactGetInput{}
+
+	l := math.Ceil(float64(len(items)) / 10.0)
+	if l <= 0 {
+		return r
+	}
+
+	input := make([]*dynamodb.TransactGetItemsInput, int(l))
+	var tgi *dynamodb.TransactGetItemsInput
+	var j int
+	for i, kv := range items {
+		// Segment into groups of 10
+		if i%DynamoBatchSize == 0 {
+			tgi = &dynamodb.TransactGetItemsInput{}
+			input[j] = tgi
+			j = j + 1
+		}
+		tr := &dynamodb.TransactGetItem{
+			Get: &dynamodb.Get{
+				TableName: &table.Name,
+			},
+		}
+		appendKeyAttribute(&tr.Get.Key, table, kv)
+		tgi.TransactItems = append(tgi.TransactItems, tr)
+
+	}
+	r.input = input
+	return r
+}
+
+func (d *transactGetInput) Build() (input []*dynamodb.TransactGetItemsInput, err error) {
+	input = d.input
+	for _, i := range d.input {
+		i.ReturnConsumedCapacity = aws.String("INDEXES")
+	}
+
+	return
+}
+
+/**
+ ** ExecuteWith ... Execute a dynamo TransactGetItems call with a passed in dynamodb instance and next item pointer
+ ** dynamo - The underlying dynamodb api
+ **
+ */
+func (d *transactGetInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *transactGetOutput) {
+	out = &transactGetOutput{
+		dynamoResult: &dynamoResult{},
+	}
+
+	var input []*dynamodb.TransactGetItemsInput
+
+	if input, out.err = d.Build(); out.err != nil {
+		return
+	}
+
+	for _, bg := range input {
+		var result *dynamodb.TransactGetItemsOutput
+		if result, out.err = dynamo.TransactGetItemsWithContext(ctx, bg, opts...); out.err != nil {
+			return
+		}
+		out.results = append(out.results, result)
+	}
+
+	return
+}
+
+/** Results ... Deserialize the results using a user provided target object generator function
+ ** nextItem - The item pointer function, which is called on each new object returned from dynamodb. The function should
+ ** 		   store each item in an array before returning.
+ **/
+
+func (o *transactGetOutput) Results(nextItem func() interface{}) (err error) {
+	err = o.Error()
+	if o.Error() != nil || nextItem == nil {
+		return
+	}
+	for _, result := range o.results {
+		for _, av := range result.Responses {
+			if o.err = deserializeTo(av.Item, nextItem()); o.err != nil {
+				return
+			}
+		}
+	}
+	return
+}
+
+/***************************************************************************************/
 /************************************** PutItem ****************************************/
 /***************************************************************************************/
 type putInput dynamodb.PutItemInput
@@ -666,6 +779,187 @@ func (o *putOutput) Result(item interface{}) (err error) {
 	}
 	deserializeTo(o.PutItemOutput.Attributes, item)
 	return
+}
+
+/***************************************************************************************/
+/************************************** TransactWriteItems *********************************/
+/***************************************************************************************/
+type transactWriteItemsInput struct {
+	*dynamodb.TransactWriteItemsInput
+	table            DynamoTable
+	delayedFunctions []func() error
+}
+
+type transactWriteItemsOutput struct {
+	*dynamoResult
+	results *dynamodb.TransactWriteItemsOutput
+}
+
+/*TransactWriteItems represents dynamo batch write item call*/
+func (table DynamoTable) TransactWriteItems() *transactWriteItemsInput {
+	r := transactWriteItemsInput{
+		TransactWriteItemsInput: &dynamodb.TransactWriteItemsInput{},
+		table: table,
+	}
+	return &r
+}
+
+func (d *transactWriteItemsInput) WithClientRequestToken(token string) *transactWriteItemsInput {
+	d.ClientRequestToken = &token
+	return d
+}
+
+func (d *transactWriteItemsInput) writeItem(item interface{}, f func(DynamoDBValue) *dynamodb.TransactWriteItem) *transactWriteItemsInput {
+
+	delayed := func() error {
+
+		// Error if batch size exceeds DynamoBatchSize
+		if len(d.TransactItems) > DynamoBatchSize {
+			return BatchSizeExceededError
+		}
+
+		var write *dynamodb.TransactWriteItem
+		switch t := item.(type) {
+		case KeyValue:
+			m := make(map[string]*dynamodb.AttributeValue)
+			appendKeyAttribute(&m, d.table, t)
+			write = f(m)
+		default:
+			dynamoItem, err := dynamodbattribute.MarshalMap(item)
+			if err != nil {
+				return err
+			}
+			write = f(dynamoItem)
+		}
+
+		d.TransactItems = append(d.TransactItems, write)
+
+		return nil
+	}
+
+	d.delayedFunctions = append(d.delayedFunctions, delayed)
+
+	return d
+}
+
+func (d *transactWriteItemsInput) PutItem(item interface{}, c ...Expression) *transactWriteItemsInput {
+	i := d.table.PutItem(item)
+	if len(c) > 0 {
+		i.SetConditionExpression(c[0])
+	}
+	return d.writeItem(item, func(v DynamoDBValue) *dynamodb.TransactWriteItem {
+		r := &dynamodb.TransactWriteItem{
+			Put: &dynamodb.Put{
+				Item:      v,
+				TableName: &d.table.Name,
+			},
+		}
+		b := i.Build()
+		r.Put.ConditionExpression = b.ConditionExpression
+		r.Put.ExpressionAttributeNames = b.ExpressionAttributeNames
+		r.Put.ExpressionAttributeValues = b.ExpressionAttributeValues
+
+		return r
+
+	})
+}
+
+func (d *transactWriteItemsInput) UpdateItem(key KeyValue, update *UpdateExpression, c ...Expression) *transactWriteItemsInput {
+
+	i := d.table.UpdateItem(key).SetUpdateExpression(update)
+	if len(c) > 0 {
+		i.SetConditionExpression(c[0])
+	}
+	return d.writeItem(key, func(v DynamoDBValue) *dynamodb.TransactWriteItem {
+		r := &dynamodb.TransactWriteItem{
+			Update: &dynamodb.Update{
+				Key:       v,
+				TableName: &d.table.Name,
+			},
+		}
+		b, _ := i.Build()
+		r.Update.ConditionExpression = b.ConditionExpression
+		r.Update.UpdateExpression = b.UpdateExpression
+		r.Update.ExpressionAttributeNames = b.ExpressionAttributeNames
+		r.Update.ExpressionAttributeValues = b.ExpressionAttributeValues
+
+		return r
+	})
+}
+func (d *transactWriteItemsInput) DeleteItem(key KeyValue, c ...Expression) *transactWriteItemsInput {
+
+	i := d.table.DeleteItem(key)
+	if len(c) > 0 {
+		i.SetConditionExpression(c[0])
+	}
+
+	return d.writeItem(key, func(v DynamoDBValue) *dynamodb.TransactWriteItem {
+		r := &dynamodb.TransactWriteItem{
+			Delete: &dynamodb.Delete{
+				Key:       v,
+				TableName: &d.table.Name,
+			},
+		}
+
+		b := i.Build()
+		r.Delete.ConditionExpression = b.ConditionExpression
+		r.Delete.ExpressionAttributeNames = b.ExpressionAttributeNames
+		r.Delete.ExpressionAttributeValues = b.ExpressionAttributeValues
+
+		return r
+	})
+
+}
+
+func (d *transactWriteItemsInput) ConditionCheck(key KeyValue, c Expression) *transactWriteItemsInput {
+
+	return d.writeItem(key, func(v DynamoDBValue) *dynamodb.TransactWriteItem {
+
+		r := &dynamodb.TransactWriteItem{
+			ConditionCheck: &dynamodb.ConditionCheck{
+				Key:       v,
+				TableName: &d.table.Name,
+			},
+		}
+
+		s, n, m, _ := c.construct("cond", 1, true)
+		r.ConditionCheck.ConditionExpression = &s
+
+		r.ConditionCheck.ExpressionAttributeNames = n
+		r.ConditionCheck.ExpressionAttributeValues = marshal(m)
+
+		return r
+	})
+}
+
+func (d *transactWriteItemsInput) Build() (input *dynamodb.TransactWriteItemsInput, err error) {
+	for _, function := range d.delayedFunctions {
+		if err = function(); err != nil {
+			return
+		}
+	}
+
+	input = d.TransactWriteItemsInput
+	return
+}
+
+func (d *transactWriteItemsInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *transactWriteItemsOutput) {
+	out = &transactWriteItemsOutput{
+		dynamoResult: &dynamoResult{},
+	}
+
+	input, err := d.Build()
+	if err != nil {
+		out.err = err
+		return
+	}
+	out.results, out.err = dynamo.TransactWriteItemsWithContext(ctx, input, opts...)
+
+	return
+}
+
+func (d *transactWriteItemsOutput) Results() (*dynamodb.TransactWriteItemsOutput, error) {
+	return d.results, d.Error()
 }
 
 /***************************************************************************************/
@@ -1598,6 +1892,7 @@ func (table DynamoTable) CreateTable() *createTable {
 		k = append(k, &dynamodb.KeySchemaElement{AttributeName: &rk, KeyType: &rkt})
 		a = append(a, &dynamodb.AttributeDefinition{AttributeName: &rk, AttributeType: &rktt})
 	}
+
 	t := dynamodb.CreateTableInput{
 		TableName:             &table.Name,
 		KeySchema:             k,
@@ -1709,12 +2004,12 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 	if gsi.ReadUnits != 0 {
 		gsir = &gsi.ReadUnits
 	} else {
-		gsir = aws.Int64(10)
+		gsir = aws.Int64(DynamoBatchSize)
 	}
 	if gsi.WriteUnits != 0 {
 		gsiw = &gsi.WriteUnits
 	} else {
-		gsiw = aws.Int64(10)
+		gsiw = aws.Int64(DynamoBatchSize)
 	}
 
 	keySchema := []*dynamodb.KeySchemaElement{
@@ -1762,8 +2057,18 @@ func (d *createTable) WithGlobalSecondaryIndex(gsi GlobalSecondaryIndex) *create
 	return d
 }
 
-func (d *createTable) Build() *dynamodb.CreateTableInput {
-	r := dynamodb.CreateTableInput(*d)
+func (c *createTable) Build() *dynamodb.CreateTableInput {
+	// Dedupe attribute defns
+	at := make(map[string]*dynamodb.AttributeDefinition)
+	for _, t := range c.AttributeDefinitions {
+		at[*t.AttributeName] = t
+	}
+	c.AttributeDefinitions = nil
+
+	for _, v := range at {
+		c.AttributeDefinitions = append(c.AttributeDefinitions, v)
+	}
+	r := dynamodb.CreateTableInput(*c)
 	return &r
 }
 

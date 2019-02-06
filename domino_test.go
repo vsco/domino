@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -40,15 +41,15 @@ type UserTable struct {
 }
 
 type User struct {
-	Email       string            `json:"email,omitempty"`
-	Password    string            `json:"password,omitempty"`
+	Email       string            `dynamodbav:"email,omitempty"`
+	Password    string            `dynamodbav:"password,omitempty"`
 	Visits      []int64           `dynamodbav:"visits,numberset,omitempty"`
 	Degrees     []float64         `dynamodbav:"degrees,numberset,omitempty"`
 	Locales     []string          `dynamodbav:"locales,stringset,omitempty"`
-	LoginCount  int               `json:"loginCount,omitempty"`
-	LoginDate   int64             `json:"lastLoginDate,omitempty"`
-	RegDate     int64             `json:"registrationDate,omitempty"`
-	Preferences map[string]string `json:"preferences,omitempty"`
+	LoginCount  int               `dynamodbav:"loginCount,omitempty"`
+	LoginDate   int64             `dynamodbav:"lastLoginDate,omitempty"`
+	RegDate     int64             `dynamodbav:"registrationDate,omitempty"`
+	Preferences map[string]string `dynamodbav:"preferences,omitempty"`
 }
 
 func NewUserTable() UserTable {
@@ -59,11 +60,10 @@ func NewUserTable() UserTable {
 	reg := NumericField("registrationDate")
 
 	nameGlobalIndex := GlobalSecondaryIndex{
-		Name:             "name-index",
-		PartitionKey:     firstName,
-		RangeKey:         lastName,
-		ProjectionType:   ProjectionTypeINCLUDE,
-		NonKeyAttributes: []DynamoFieldIFace{lastName, reg},
+		Name:           "name-index",
+		PartitionKey:   firstName,
+		RangeKey:       lastName,
+		ProjectionType: ProjectionTypeALL,
 	}
 
 	registrationDateIndex := LocalSecondaryIndex{
@@ -118,28 +118,28 @@ func TestCreateTable(t *testing.T) {
 	ctx := context.Background()
 	db := NewDB()
 	table := NewUserTable()
-	
+
 	err := table.CreateTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
-	
+
 	err = table.DeleteTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
-	
+
 	// Test nil range key
 	table.RangeKey = nil
 	table.LocalSecondaryIndexes = nil // Illegal to have an lsi, and no range key
 	err = table.CreateTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
-	
+
 	err = table.DeleteTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
-	
+
 	// Test nil gsi range key
 	table.nameGlobalIndex.RangeKey = nil
-	
+
 	err = table.CreateTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
-	
+
 	err = table.DeleteTable().ExecuteWith(ctx, db)
 	assert.NoError(t, err)
 
@@ -254,7 +254,7 @@ func TestBatchGetItem(t *testing.T) {
 	u := &User{Email: "bob@email.com", Password: "password"}
 	items := []interface{}{u}
 	kvs := []KeyValue{}
-	for i := 0; i < 200; i++ {
+	for i := 0; i < 198; i++ {
 		items = append(items, &User{Email: "bob@email.com", Password: "password" + strconv.Itoa(i)})
 		kvs = append(kvs, KeyValue{"bob@email.com", "password" + strconv.Itoa(i)})
 	}
@@ -283,7 +283,19 @@ func TestBatchGetItem(t *testing.T) {
 	err = g.ExecuteWith(ctx, db).Results(nextItem)
 
 	assert.NoError(t, err)
-	assert.Equal(t, len(users), 200)
+	assert.Equal(t, len(users), 198)
+
+	// TransactGetItems
+	users = []*User{}
+	tg := table.TransactGetItems(kvs...)
+	b, berr := tg.Build()
+	assert.NoError(t, berr)
+	assert.Equal(t, 20, len(b))
+
+	err = tg.ExecuteWith(ctx, db).Results(nextItem)
+	assert.NoError(t, err)
+	assert.Equal(t, len(users), 198)
+
 }
 
 func TestUpdateItem(t *testing.T) {
@@ -418,6 +430,133 @@ func TestPutItem(t *testing.T) {
 	assert.NotEmpty(t, out.Item)
 }
 
+func TestTransactWriteItems(t *testing.T) {
+	table := NewUserTable()
+	db := NewDB()
+	ctx := context.Background()
+
+	err := table.CreateTable().ExecuteWith(ctx, db)
+	defer table.DeleteTable().ExecuteWith(ctx, db)
+
+	assert.NoError(t, err)
+
+	users := []User{}
+	items := make(map[string]User)
+	updates := make(map[interface{}]KeyValue)
+	deletes := make(map[interface{}]KeyValue)
+	conditions := make(map[interface{}]KeyValue)
+
+	q := table.TransactWriteItems().WithClientRequestToken("token")
+
+	for i := 0; i < 2; i++ {
+		ikey := fmt.Sprintf("joe@email%d.com", i)
+		items[ikey] = User{Email: ikey, Password: "password", LoginCount: 1}
+		users = append(users, items[ikey])
+		updates[ikey] = KeyValue{ikey, "password"}
+		dkey := fmt.Sprintf("test%d@email.com", i)
+		deletes[dkey] = KeyValue{dkey, "password"}
+		conditions[ikey] = KeyValue{ikey, "password"}
+
+		q = q.PutItem(items[ikey], table.registrationDate.Equals(123)).
+			UpdateItem(updates[ikey], table.emailField.SetField("nonname@email.com", false), table.emailField.Equals(ikey)).
+			DeleteItem(deletes[dkey], table.registrationDate.Equals(123)).
+			ConditionCheck(conditions[ikey], table.registrationDate.Equals(123))
+	}
+
+	var out *dynamodb.TransactWriteItemsInput
+	out, err = q.Build()
+	assert.NoError(t, err)
+
+	assert.Equal(t, 2*4, len(out.TransactItems))
+
+	assert.Equal(t, aws.String("token"), out.ClientRequestToken)
+
+	for _, it := range out.TransactItems {
+
+		if it.Put != nil {
+			v, _ := dynamodbattribute.MarshalMap(items[*it.Put.Item["email"].S])
+			assert.Equal(t, v, it.Put.Item)
+			assert.NotNil(t, it.Put.ConditionExpression)
+		} else if it.Delete != nil {
+			m := make(map[string]*dynamodb.AttributeValue)
+			appendKeyAttribute(&m, table.DynamoTable, deletes[*it.Delete.Key["email"].S])
+			assert.Equal(t, m, it.Delete.Key)
+			assert.NotNil(t, it.Delete.ConditionExpression)
+		} else if it.Update != nil {
+			m := make(map[string]*dynamodb.AttributeValue)
+			appendKeyAttribute(&m, table.DynamoTable, updates[*it.Update.Key["email"].S])
+			assert.Equal(t, m, it.Update.Key)
+			assert.NotNil(t, it.Update.UpdateExpression)
+			assert.NotNil(t, it.Update.ConditionExpression)
+		} else if it.ConditionCheck != nil {
+			m := make(map[string]*dynamodb.AttributeValue)
+			appendKeyAttribute(&m, table.DynamoTable, conditions[*it.ConditionCheck.Key["email"].S])
+			assert.Equal(t, m, it.ConditionCheck.Key)
+			assert.NotNil(t, it.ConditionCheck.ConditionExpression)
+		}
+	}
+
+	// Put
+	qb := table.TransactWriteItems()
+	for _, v := range items {
+		qb = qb.PutItem(v)
+	}
+
+	_, err = qb.ExecuteWith(ctx, db).Results()
+	assert.NoError(t, err)
+
+	var results []User
+
+	err = table.Scan().ExecuteWith(ctx, db).Results(func() interface{} {
+		results = append(results, User{})
+		return &results[len(results)-1]
+	})
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, users, results)
+
+	// Update
+	q = table.TransactWriteItems()
+	for _, v := range updates {
+		q = q.UpdateItem(v, table.name.SetField("nonname", false), table.loginCount.Equals(1))
+	}
+
+	_, err = q.ExecuteWith(ctx, db).Results()
+	assert.NoError(t, err)
+
+	// Condition Check
+	q = table.TransactWriteItems()
+	for _, v := range conditions {
+		q = q.ConditionCheck(v, table.name.Equals("nonname"))
+	}
+	_, err = q.ExecuteWith(ctx, db).Results()
+	assert.NoError(t, err)
+
+	q = table.TransactWriteItems()
+	for _, v := range conditions {
+		q = q.ConditionCheck(v, table.name.Equals("nonname2"))
+	}
+	_, err = q.ExecuteWith(ctx, db).Results()
+	assert.Error(t, err)
+
+	// Delete
+	q = table.TransactWriteItems()
+	for _, v := range updates {
+		q = q.DeleteItem(v, table.loginCount.Equals(1))
+	}
+
+	_, err = q.ExecuteWith(ctx, db).Results()
+	assert.NoError(t, err)
+
+	results = nil
+	err = table.Scan().ExecuteWith(ctx, db).Results(func() interface{} {
+		results = append(results, User{})
+		return &results[len(results)-1]
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(results))
+
+}
+
 func TestExpressions(t *testing.T) {
 	table := NewUserTable()
 	db := NewDB()
@@ -454,8 +593,6 @@ func TestExpressions(t *testing.T) {
 
 	expectedFilter := "registrationDate = :filter_1 OR contains(lastName,:filter_2) OR (NOT registrationDate = :filter_3) OR (size(visits) <=:filter_4 AND size(firstName) >=:filter_5) OR registrationDate = :filter_6 OR registrationDate <= :filter_7 OR (registrationDate between :filter_8 and :filter_9) OR (registrationDate in (:filter_10,:filter_11))"
 	assert.Equal(t, expectedFilter, *q.Build().FilterExpression)
-
-	fmt.Println(*q.Build())
 
 	channel := make(chan *User)
 	errChan := q.ExecuteWith(ctx, db).StreamWithChannel(channel)

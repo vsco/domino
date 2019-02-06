@@ -36,9 +36,9 @@ go_test(
 #### Atlassian / Localstack ####
 genrule(
     name = "dynamodb",
-    outs = ["localstack-run-id"],
-    cmd = "docker stop localstack || true; docker rm -f localstack || true; docker run -d -p 4567-4576:4567-4576 --name localstack atlassianlabs/localstack:0.4.1 > $@",
+    outs = ["dynamodb-local-run-id"],
+    cmd = "docker stop dynamodb-local || true; docker rm -f dynamodb-local || true; docker run -d -p 4569:8000 --name dynamodb-local amazon/dynamodb-local:1.11.475 > $@",
     local = 1,
-    message = "Spinning up localstack container...",
+    message = "Spinning up dynamo-db container...",
     visibility = ["//visibility:public"],
 )
