@@ -554,53 +554,52 @@ func (d *batchGetInput) SetConsistentRead(c bool) *batchGetInput {
 	return d
 }
 
+const minRetryBackoff = time.Millisecond * 100
+const maxRetryBackoff = time.Second * 2
 /**
  ** ExecuteWith ... Execute a dynamo BatchGetItem call with a passed in dynamodb instance and next item pointer
  ** dynamo - The underlying dynamodb api
  **
  */
-func (d *batchGetInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *batchGetOutput) {
-	out = &batchGetOutput{
+func (d *batchGetInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) *batchGetOutput {
+	out := &batchGetOutput{
 		dynamoResult: &dynamoResult{},
 	}
 
 	var input []*dynamodb.BatchGetItemInput
 
 	if input, out.err = d.Build(); out.err != nil {
-		return
+		return out
 	}
 
 	for _, bg := range input {
 		for retry := 0; ; retry++ {
 			var result *dynamodb.BatchGetItemOutput
 			if result, out.err = dynamo.BatchGetItemWithContext(ctx, bg, opts...); out.err != nil {
-				return
+				return out
 			}
 			out.results = append(out.results, result)
 
 			if result.UnprocessedKeys == nil || len(result.UnprocessedKeys) == 0 {
+				// we have everything
 				break
 			}
 
 			bg.RequestItems = result.UnprocessedKeys
 
-			// Exponential backoff before re-submitting UnprocessedKeys.  Immediate
-			// retries re-trigger DynamoDB throttles, amplifying the problem.
-			// Delay: 50ms * 2^retry, capped at 2 s (50 → 100 → 200 → 400 → 800 → 2000ms…).
-			delay := time.Duration(math.Min(
-				float64(2*time.Second),
-				float64(50*time.Millisecond)*math.Pow(2, float64(retry)),
-			))
+			// Exponential backoff before re-submitting UnprocessedKeys. Immediate retries re-trigger DynamoDB 
+			// throttling.
+			delay := time.Duration(math.Min(float64(maxRetryBackoff), float64(minRetryBackoff)*math.Pow(2, float64(retry))))
 			select {
 			case <-time.After(delay):
 			case <-ctx.Done():
 				out.err = ctx.Err()
-				return
+				return  out
 			}
 		}
 	}
 
-	return
+	return out
 }
 
 /** Results ... Deserialize the results using a user provided target object generator function
