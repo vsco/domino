@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "domino",
+    name = "go_default_library",
     srcs = [
         "domino.go",
         "expression.go",
@@ -21,7 +21,7 @@ go_test(
     name = "domino_test",
     srcs = ["domino_test.go"],
     data = ["//:dynamodb"],
-    embed = [":domino"],
+    embed = [":go_default_library"],
     deps = [
         "@com_github_aws_aws_sdk_go//aws",
         "@com_github_aws_aws_sdk_go//aws/awserr",
