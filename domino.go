@@ -571,18 +571,32 @@ func (d *batchGetInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, o
 	}
 
 	for _, bg := range input {
-		retry := 0
-	Execute:
-		var result *dynamodb.BatchGetItemOutput
-		if result, out.err = dynamo.BatchGetItemWithContext(ctx, bg, opts...); out.err != nil {
-			return
-		}
-		out.results = append(out.results, result)
+		for retry := 0; ; retry++ {
+			var result *dynamodb.BatchGetItemOutput
+			if result, out.err = dynamo.BatchGetItemWithContext(ctx, bg, opts...); out.err != nil {
+				return
+			}
+			out.results = append(out.results, result)
 
-		if result.UnprocessedKeys != nil && len(result.UnprocessedKeys) > 0 {
+			if result.UnprocessedKeys == nil || len(result.UnprocessedKeys) == 0 {
+				break
+			}
+
 			bg.RequestItems = result.UnprocessedKeys
-			retry++
-			goto Execute
+
+			// Exponential backoff before re-submitting UnprocessedKeys.  Immediate
+			// retries re-trigger DynamoDB throttles, amplifying the problem.
+			// Delay: 50ms * 2^retry, capped at 2 s (50 → 100 → 200 → 400 → 800 → 2000ms…).
+			delay := time.Duration(math.Min(
+				float64(2*time.Second),
+				float64(50*time.Millisecond)*math.Pow(2, float64(retry)),
+			))
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				out.err = ctx.Err()
+				return
+			}
 		}
 	}
 

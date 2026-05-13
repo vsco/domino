@@ -1,0 +1,44 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "domino",
+    srcs = [
+        "domino.go",
+        "expression.go",
+    ],
+    importpath = "github.com/vsco/domino",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_aws_aws_sdk_go//aws",
+        "@com_github_aws_aws_sdk_go//aws/awserr",
+        "@com_github_aws_aws_sdk_go//aws/request",
+        "@com_github_aws_aws_sdk_go//service/dynamodb",
+        "@com_github_aws_aws_sdk_go//service/dynamodb/dynamodbattribute",
+    ],
+)
+
+go_test(
+    name = "domino_test",
+    srcs = ["domino_test.go"],
+    data = ["//:dynamodb"],
+    embed = [":domino"],
+    deps = [
+        "@com_github_aws_aws_sdk_go//aws",
+        "@com_github_aws_aws_sdk_go//aws/awserr",
+        "@com_github_aws_aws_sdk_go//aws/credentials",
+        "@com_github_aws_aws_sdk_go//aws/session",
+        "@com_github_aws_aws_sdk_go//service/dynamodb",
+        "@com_github_aws_aws_sdk_go//service/dynamodb/dynamodbattribute",
+        "@com_github_stretchr_testify//assert",
+    ],
+)
+
+#### Atlassian / Localstack ####
+genrule(
+    name = "dynamodb",
+    outs = ["dynamodb-local-run-id"],
+    cmd = "docker stop dynamodb-local || true; docker rm -f dynamodb-local || true; docker run -d -p 4569:8000 --name dynamodb-local amazon/dynamodb-local:1.11.475 > $@",
+    local = 1,
+    message = "Spinning up dynamo-db container...",
+    visibility = ["//visibility:public"],
+)
