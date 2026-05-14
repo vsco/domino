@@ -1,27 +1,50 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# linux install only
-test "Darwin" = "$(uname)" && exit 1
+# Install Bazelisk as `bazel`.
+# Bazelisk reads .bazelversion from the workspace root and downloads
+# the correct Bazel version automatically, so no BAZEL_VERSION env var is needed.
 
-if [ -z "$BAZEL_VERSION" ]; then
-   BAZEL_VERSION="0.8.1"
+BAZELISK_VERSION="1.25.0"
+INSTALL_DIR="${HOME}/.local/bin"
+mkdir -p "${INSTALL_DIR}"
+
+case "$(uname -s)" in
+  Linux)
+    case "$(uname -m)" in
+      x86_64)  BAZELISK_ASSET="bazelisk-linux-amd64" ;;
+      aarch64) BAZELISK_ASSET="bazelisk-linux-arm64" ;;
+      *)        echo "Unsupported Linux arch: $(uname -m)"; exit 1 ;;
+    esac
+    ;;
+  Darwin)
+    case "$(uname -m)" in
+      x86_64)  BAZELISK_ASSET="bazelisk-darwin-amd64" ;;
+      arm64)   BAZELISK_ASSET="bazelisk-darwin-arm64" ;;
+      *)        echo "Unsupported macOS arch: $(uname -m)"; exit 1 ;;
+    esac
+    ;;
+  *)
+    echo "Unsupported OS: $(uname -s)"
+    exit 1
+    ;;
+esac
+
+BAZELISK_URL="https://github.com/bazelbuild/bazelisk/releases/download/v${BAZELISK_VERSION}/${BAZELISK_ASSET}"
+
+# Skip download if the correct version is already installed.
+if command -v bazel &>/dev/null && bazel version 2>/dev/null | grep -q "Bazelisk version: v${BAZELISK_VERSION}"; then
+  echo "Bazelisk ${BAZELISK_VERSION} already installed at $(command -v bazel), skipping download."
+  exit 0
 fi
 
-if [ -z "$BAZEL_INSTALL" ]; then
-   BAZEL_INSTALL="${HOME}/bazel/install"
-fi
+echo "Downloading Bazelisk ${BAZELISK_VERSION} (${BAZELISK_ASSET})..."
+curl -fsSL "${BAZELISK_URL}" -o "${INSTALL_DIR}/bazel"
+chmod +x "${INSTALL_DIR}/bazel"
 
-# if BAZEL_OUTPUT_BASE is set, create the directory and point all execution to that directory
-if [ -n "$BAZEL_OUTPUT_BASE" ]; then
-   mkdir -p $BAZEL_OUTPUT_BASE
-   echo "startup --output_base=${BAZEL_OUTPUT_BASE}" >> ~/.bazelrc
-fi
+# Ensure the install dir is on PATH for subsequent Travis steps.
+export PATH="${INSTALL_DIR}:${PATH}"
+echo "export PATH=\"${INSTALL_DIR}:\${PATH}\"" >> ~/.bashrc
 
-# install bazel and return to previous directory
-mkdir -p $BAZEL_INSTALL
-pushd $BAZEL_INSTALL
-wget --no-clobber "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel_${BAZEL_VERSION}-linux-x86_64.deb"
-sudo dpkg -i "bazel_${BAZEL_VERSION}-linux-x86_64.deb"
-popd
-
+echo "Bazelisk installed as \`bazel\` at ${INSTALL_DIR}/bazel"
+bazel version
