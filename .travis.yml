@@ -1,20 +1,13 @@
-services:
-  - docker
-
-env:
-  - BAZEL_VERSION=0.8.1
-  - BAZEL_VERSION=0.13.1
-  - BAZEL_VERSION=0.14.0
-
 before_install:
   - script/install-bazel
+  - export PATH="${HOME}/.local/bin:${PATH}"
 
 install:
   - bazel info
   - bazel build //:all-targets
 
 script:
-  - bazel test --test_output=errors  //...
+  - bazel test --test_output=errors //...
 
 notifications:
   email: false

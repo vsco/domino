@@ -554,39 +554,52 @@ func (d *batchGetInput) SetConsistentRead(c bool) *batchGetInput {
 	return d
 }
 
+const minRetryBackoff = time.Millisecond * 100
+const maxRetryBackoff = time.Second * 2
 /**
  ** ExecuteWith ... Execute a dynamo BatchGetItem call with a passed in dynamodb instance and next item pointer
  ** dynamo - The underlying dynamodb api
  **
  */
-func (d *batchGetInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) (out *batchGetOutput) {
-	out = &batchGetOutput{
+func (d *batchGetInput) ExecuteWith(ctx context.Context, dynamo DynamoDBIFace, opts ...request.Option) *batchGetOutput {
+	out := &batchGetOutput{
 		dynamoResult: &dynamoResult{},
 	}
 
 	var input []*dynamodb.BatchGetItemInput
 
 	if input, out.err = d.Build(); out.err != nil {
-		return
+		return out
 	}
 
 	for _, bg := range input {
-		retry := 0
-	Execute:
-		var result *dynamodb.BatchGetItemOutput
-		if result, out.err = dynamo.BatchGetItemWithContext(ctx, bg, opts...); out.err != nil {
-			return
-		}
-		out.results = append(out.results, result)
+		for retry := 0; ; retry++ {
+			var result *dynamodb.BatchGetItemOutput
+			if result, out.err = dynamo.BatchGetItemWithContext(ctx, bg, opts...); out.err != nil {
+				return out
+			}
+			out.results = append(out.results, result)
 
-		if result.UnprocessedKeys != nil && len(result.UnprocessedKeys) > 0 {
+			if result.UnprocessedKeys == nil || len(result.UnprocessedKeys) == 0 {
+				// we have everything
+				break
+			}
+
 			bg.RequestItems = result.UnprocessedKeys
-			retry++
-			goto Execute
+
+			// Exponential backoff before re-submitting UnprocessedKeys. Immediate retries re-trigger DynamoDB 
+			// throttling.
+			delay := time.Duration(math.Min(float64(maxRetryBackoff), float64(minRetryBackoff)*math.Pow(2, float64(retry))))
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				out.err = ctx.Err()
+				return  out
+			}
 		}
 	}
 
-	return
+	return out
 }
 
 /** Results ... Deserialize the results using a user provided target object generator function
